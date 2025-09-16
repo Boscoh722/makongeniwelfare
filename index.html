@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Makongeni Green Nairobi Welfare</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Roboto', sans-serif; font-size: 16px; background-color: #f8f9fa; }
+        .navbar { background-color: #28a745 !important; }
+        .navbar-brand, .nav-link { color: white !important; }
+        .btn-success { background-color: #28a745; border-color: #28a745; }
+        .btn-success:hover { background-color: #218838; border-color: #1e7e34; }
+        .card { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2 { color: #28a745; }
+        .table-responsive { overflow-x: auto; }
+        .alert { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+        input:invalid { border-color: red; }
+        .negative { color: #dc3545 !important; font-weight: bold; }
+        .positive { color: #28a745 !important; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- React + Babel -->
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js"></script>
+
+    <!-- Bootstrap JS & sha256 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.10.1/src/sha256.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Month names
+        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+        // LocalStorage helpers
+        const loadData = (key, defaultValue) => {
+            try {
+                const item = localStorage.getItem(key);
+                return item ? JSON.parse(item) : defaultValue;
+            } catch (e) {
+                console.error(`Error loading ${key}:`, e);
+                return defaultValue;
+            }
+        };
+        const saveData = (key, data) => {
+            try {
+                localStorage.setItem(key, JSON.stringify(data));
+            } catch (e) {
+                console.error(`Error saving ${key}:`, e);
+            }
+        };
+
+        // Utils for date parsing
+        const getYear = (date) => date ? parseInt(date.split('-')[0], 10) : 0;
+        const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0; // 1..12
+
+        // Compute group share per year
+        const computeGroupShare = (year) => {
+            const payments = loadData('payments', []);
+            const loans = loadData('loans', []);
+            const expenditures = loadData('expenditures', []);
+            const members = loadData('users', []);
+            const yearPayments = payments.filter(p => getYear(p.date) === year);
+            const monthlySums = {};
+            yearPayments.forEach(p => {
+                const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
+                monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
+            });
+            const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+            const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const totalInterest = totalLoans * 0.1;
+            const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            return members.length ? (totalInterest + totalFines - totalExp) / members.length : 0;
+        };
+
+        // ErrorBoundary
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false };
+            }
+            static getDerivedStateFromError() {
+                return { hasError: true };
+            }
+            componentDidCatch(error, info) {
+                console.error('ErrorBoundary caught', error, info);
+            }
+            render() {
+                if (this.state.hasError) {
+                    return <div className="alert alert-danger">Something went wrong. Please refresh the page.</div>;
+                }
+                return this.props.children;
+            }
+        }
+
+        // Login
+        function Login({ onLogin }) {
+            const [name, setName] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const users = loadData('users', []);
+                const hashed = sha256(password || '');
+                const user = users.find(u => u.name === name && u.password === hashed);
+                if (user) {
+                    onLogin(user);
+                } else {
+                    setError('Invalid credentials');
+                    setTimeout(() => setError(''), 3000);
+                }
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div className="container mt-5">
+                        <div className="row justify-content-center">
+                            <div className="col-md-6 col-sm-8">
+                                <div className="card">
+                                    <div className="card-body">
+                                        <h2 className="card-title text-center">Login</h2>
+                                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                                        <form onSubmit={handleSubmit}>
+                                            <div className="mb-3">
+                                                <label className="form-label">Name</label>
+                                                <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required />
+                                            </div>
+                                            <div className="mb-3">
+                                                <label className="form-label">Password</label>
+                                                <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required />
+                                            </div>
+                                            <button type="submit" className="btn btn-success w-100">Login</button>
+                                        </form>
+                                        <div className="mt-3 small text-muted">Default admin: <strong>admin</strong> / <strong>admin</strong> (first-time only)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Dashboard
+        function Dashboard({ user, onLogout }) {
+            const [view, setView] = useState('home');
+            const [year, setYear] = useState(new Date().getFullYear());
+            const [alert, setAlert] = useState('');
+
+            const showAlert = (msg) => {
+                setAlert(msg);
+                setTimeout(() => setAlert(''), 3000);
+            };
+
+            const renderView = () => {
+                const viewProps = { year, setYear };
+                switch (view) {
+                    case 'addMember': return user.role === 'Admin' ? <AddMember onSuccess={() => showAlert('Member added')} /> : <AccessDenied />;
+                    case 'viewMembers': return user.role === 'Admin' ? <ViewMembers /> : <AccessDenied />;
+                    case 'addPayment': return ['Admin', 'Secretary'].includes(user.role) ? <AddPayment onSuccess={() => showAlert('Payment added')} /> : <AccessDenied />;
+                    case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
+                    case 'addExpenditure': return ['Admin', 'Secretary'].includes(user.role) ? <AddExpenditure onSuccess={() => showAlert('Expenditure added')} /> : <AccessDenied />;
+                    case 'viewAll': return ['Admin', 'Secretary', 'Chairman', 'Treasurer'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
+                    case 'viewPersonal': return user.role === 'Member' ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
+                    case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
+                    default: return <Home user={user} setView={setView} />;
+                }
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <nav className="navbar navbar-expand-lg">
+                            <div className="container">
+                                <a className="navbar-brand" href="#" onClick={(e) => { e.preventDefault(); setView('home'); }}>Makongeni Green Nairobi Welfare</a>
+                                <div className="navbar-nav ms-auto">
+                                    <span className="nav-link" style={{cursor: 'pointer'}} onClick={onLogout}>Logout</span>
+                                </div>
+                            </div>
+                        </nav>
+                        <div className="container mt-4">
+                            {alert && <div className="alert alert-success alert-dismissible">{alert}</div>}
+                            {renderView()}
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Home
+        function Home({ user, setView }) {
+            return (
+                <div>
+                    <h1 className="mb-4">Welcome, {user.name} ({user.role})</h1>
+                    <div className="row">
+                        {user.role === 'Admin' && (
+                            <>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addMember')}>Add Member</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewMembers')}>View Members</button></div>
+                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
+                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('download')}>Download All Data</button></div>
+                            </>
+                        )}
+                        {user.role === 'Secretary' && (
+                            <>
+                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
+                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
+                                <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                            </>
+                        )}
+                        {['Chairman','Treasurer'].includes(user.role) && (
+                            <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                        )}
+                        {user.role === 'Member' && (
+                            <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewPersonal')}>View Personal Data</button></div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function AccessDenied() {
+            return <div className="alert alert-danger">Access Denied</div>;
+        }
+
+        // Add Member
+        function AddMember({ onSuccess }) {
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('Member');
+            const [password, setPassword] = useState('');
+
+            const handleSubmit = () => {
+                if (!name || !password) {
+                    alert('Please provide both name and password');
+                    return;
+                }
+                if (!confirm('Confirm adding this member?')) return;
+                const users = loadData('users', []);
+                if (users.find(u => u.name === name)) {
+                    alert('Name already exists');
+                    return;
+                }
+                users.push({ name, role, password: sha256(password) });
+                saveData('users', users);
+                setName(''); setPassword(''); setRole('Member');
+                onSuccess();
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Add New Member</h2>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Name</label>
+                                    <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Role</label>
+                                    <select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
+                                        <option value="Admin">Admin</option>
+                                        <option value="Secretary">Secretary</option>
+                                        <option value="Chairman">Chairman</option>
+                                        <option value="Treasurer">Treasurer</option>
+                                        <option value="Member">Member</option>
+                                    </select>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Password</label>
+                                    <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required />
+                                </div>
+                                <button className="btn btn-success" onClick={handleSubmit}>Add Member</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // View Members
+        function ViewMembers() {
+            const users = loadData('users', []);
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Members List</h2>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Name</th><th>Role</th></tr>
+                                </thead>
+                                <tbody>
+                                    {users.map(u => <tr key={u.name}><td>{u.name}</td><td>{u.role}</td></tr>)}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Add Payment
+        function AddPayment({ onSuccess }) {
+            const [member, setMember] = useState('');
+            const [date, setDate] = useState('');
+            const [paidIn, setPaidIn] = useState('');
+            const users = loadData('users', []);
+
+            const handleSubmit = () => {
+                if (!member || !date || !paidIn) {
+                    alert('Please fill all fields');
+                    return;
+                }
+                if (!confirm('Confirm adding payment?')) return;
+                const payments = loadData('payments', []);
+                payments.push({ member, date, paidIn: parseFloat(paidIn) });
+                saveData('payments', payments);
+                setPaidIn(''); setDate(''); setMember('');
+                onSuccess();
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Add Payment</h2>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Member</label>
+                                    <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required>
+                                        <option value="">Select Member</option>
+                                        {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Date</label>
+                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Paid In (KES)</label>
+                                    <input type="number" step="0.01" className="form-control" value={paidIn} onChange={e => setPaidIn(e.target.value)} required />
+                                </div>
+                                <button className="btn btn-success" onClick={handleSubmit}>Add Payment</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Add Loan
+        function AddLoan({ onSuccess }) {
+            const [member, setMember] = useState('');
+            const [date, setDate] = useState('');
+            const [amount, setAmount] = useState('');
+            const users = loadData('users', []);
+
+            const handleSubmit = () => {
+                if (!member || !date || !amount) {
+                    alert('Please fill all fields');
+                    return;
+                }
+                if (!confirm('Confirm adding loan?')) return;
+                const loans = loadData('loans', []);
+                loans.push({ member, date, amount: parseFloat(amount) });
+                saveData('loans', loans);
+                setAmount(''); setDate(''); setMember('');
+                onSuccess();
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Add Loan</h2>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Member</label>
+                                    <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required>
+                                        <option value="">Select Member</option>
+                                        {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Date</label>
+                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Loan Amount (KES)</label>
+                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
+                                </div>
+                                <button className="btn btn-success" onClick={handleSubmit}>Add Loan</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Add Expenditure
+        function AddExpenditure({ onSuccess }) {
+            const [date, setDate] = useState('');
+            const [amount, setAmount] = useState('');
+
+            const handleSubmit = () => {
+                if (!date || !amount) {
+                    alert('Please fill all fields');
+                    return;
+                }
+                if (!confirm('Confirm adding expenditure?')) return;
+                const expenditures = loadData('expenditures', []);
+                expenditures.push({ date, amount: parseFloat(amount) });
+                saveData('expenditures', expenditures);
+                setAmount(''); setDate('');
+                onSuccess();
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Add Expenditure</h2>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Date</label>
+                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label">Amount (KES)</label>
+                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
+                                </div>
+                                <button className="btn btn-success" onClick={handleSubmit}>Add Expenditure</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // View Personal Data
+        function ViewPersonal({ userId, year, setYear }) {
+            const payments = loadData('payments', []).filter(p => p.member === userId && getYear(p.date) === year);
+            const loans = loadData('loans', []).filter(l => l.member === userId && getYear(l.date) === year);
+            const share = computeGroupShare(year);
+
+            const monthlyData = {};
+            payments.forEach(p => {
+                const m = getMonth(p.date);
+                monthlyData[m] = monthlyData[m] || { paid: 0, dates: [] };
+                monthlyData[m].paid += (parseFloat(p.paidIn) || 0);
+                monthlyData[m].dates.push(p.date);
+            });
+
+            const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
+            const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
+            const totalLoan = loans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const net = totalPaid - totalFines + share - totalLoan;
+
+            const months = MONTH_NAMES.map((name, i) => {
+                const mIndex = i + 1;
+                const data = monthlyData[mIndex] || { paid: 0, dates: [] };
+                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates };
+            });
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <div className="mb-3">
+                            <label className="form-label">Year</label>
+                            <select className="form-select w-auto d-inline-block" value={year} onChange={e => setYear(parseInt(e.target.value, 10))}>
+                                <option value={2024}>2024</option>
+                                <option value={2025}>2025</option>
+                                <option value={2026}>2026</option>
+                            </select>
+                        </div>
+                        <h2>Personal Financial Data for {year}</h2>
+                        <div className="row">
+                            <div className="col-md-8">
+                                <h4>Monthly Breakdown</h4>
+                                <div className="table-responsive">
+                                    <table className="table table-striped">
+                                        <thead>
+                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Payment Dates</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {months.map((m, i) => (
+                                                <tr key={i}>
+                                                    <td>{m.month}</td>
+                                                    <td>{m.paid.toFixed(2)}</td>
+                                                    <td>{m.fine}</td>
+                                                    <td>{m.dates.join(', ')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div className="col-md-4">
+                                <div className="card">
+                                    <div className="card-body">
+                                        <h5 className="card-title">Yearly Summary</h5>
+                                        <p><strong>Total Paid:</strong> {totalPaid.toFixed(2)} KES</p>
+                                        <p><strong>Total Fines:</strong> {totalFines} KES</p>
+                                        <p><strong>Total Loans:</strong> {totalLoan.toFixed(2)} KES</p>
+                                        <p><span className={net >= 0 ? 'positive' : 'negative'}><strong>Net Amount:</strong> {net.toFixed(2)} KES</span></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // View All Data
+        function ViewAllData({ year, setYear }) {
+            const users = loadData('users', []);
+            const payments = loadData('payments', []);
+            const loans = loadData('loans', []);
+            const share = computeGroupShare(year);
+
+            const data = users.map(u => {
+                const userPayments = payments.filter(p => p.member === u.name && getYear(p.date) === year);
+                const monthlyData = {};
+                userPayments.forEach(p => {
+                    const m = getMonth(p.date);
+                    monthlyData[m] = (monthlyData[m] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+                const totalPaid = Object.values(monthlyData).reduce((sum, val) => sum + val, 0);
+                const totalFines = Object.values(monthlyData).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+                const userLoans = loans.filter(l => l.member === u.name && getYear(l.date) === year);
+                const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+                const net = totalPaid - totalFines + share - totalLoan;
+                return { name: u.name, totalPaid, totalFines, totalLoan, net };
+            });
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <div className="mb-3">
+                            <label className="form-label">Year</label>
+                            <select className="form-select w-auto d-inline-block" value={year} onChange={e => setYear(parseInt(e.target.value, 10))}>
+                                <option value={2024}>2024</option>
+                                <option value={2025}>2025</option>
+                                <option value={2026}>2026</option>
+                            </select>
+                        </div>
+                        <h2>All Data for {year}</h2>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Name</th><th>Total Paid (KES)</th><th>Total Fines (KES)</th><th>Total Loans (KES)</th><th>Net Amount (KES)</th></tr>
+                                </thead>
+                                <tbody>
+                                    {data.map(d => (
+                                        <tr key={d.name} className={d.net < 0 ? 'table-danger' : d.net > 0 ? 'table-success' : ''}>
+                                            <td>{d.name}</td>
+                                            <td>{d.totalPaid.toFixed(2)}</td>
+                                            <td>{d.totalFines}</td>
+                                            <td>{d.totalLoan.toFixed(2)}</td>
+                                            <td className={d.net >= 0 ? 'positive' : 'negative'}>{d.net.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Download Data
+        function DownloadData({ year }) {
+            const download = () => {
+                const users = loadData('users', []);
+                const payments = loadData('payments', []);
+                const loans = loadData('loans', []);
+                const expenditures = loadData('expenditures', []);
+
+                let csv = 'Members\nID,Name,Role\n';
+                users.forEach((u, i) => {
+                    csv += `${i + 1},${u.name},${u.role}\n`;
+                });
+
+                csv += '\nPayments\nName,Date,Paid In\n';
+                payments.filter(p => getYear(p.date) === year).forEach(p => {
+                    csv += `${p.member},${p.date},${p.paidIn}\n`;
+                });
+
+                csv += '\nLoans\nName,Date,Amount\n';
+                loans.filter(l => getYear(l.date) === year).forEach(l => {
+                    csv += `${l.member},${l.date},${l.amount}\n`;
+                });
+
+                csv += '\nExpenditures\nDate,Amount\n';
+                expenditures.filter(e => getYear(e.date) === year).forEach(e => {
+                    csv += `${e.date},${e.amount}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `welfare_data_${year}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Download Data for {year}</h2>
+                        <button className="btn btn-success" onClick={download}>Download CSV</button>
+                        <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Main App
+        function App() {
+            const [user, setUser] = useState(null);
+
+            // ensure admin exists on first load
+            useEffect(() => {
+                const users = loadData('users', []);
+                if (!users || users.length === 0) {
+                    const defaultAdmin = [{ name: 'admin', role: 'Admin', password: sha256('admin') }];
+                    saveData('users', defaultAdmin);
+                }
+                const storedUser = sessionStorage.getItem('user');
+                if (storedUser) {
+                    try {
+                        setUser(JSON.parse(storedUser));
+                    } catch (e) {
+                        console.error('Invalid session user', e);
+                        sessionStorage.removeItem('user');
+                    }
+                }
+            }, []);
+
+            const handleLogin = (userData) => {
+                sessionStorage.setItem('user', JSON.stringify(userData));
+                setUser(userData);
+            };
+
+            const handleLogout = () => {
+                sessionStorage.removeItem('user');
+                setUser(null);
+            };
+
+            return (
+                <ErrorBoundary>
+                    {user ? <Dashboard user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />}
+                </ErrorBoundary>
+            );
+        }
+
+        // Render (React 18)
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
