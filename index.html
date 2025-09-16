@@ -12,6 +12,8 @@
         .navbar-brand, .nav-link { color: white !important; }
         .btn-success { background-color: #28a745; border-color: #28a745; }
         .btn-success:hover { background-color: #218838; border-color: #1e7e34; }
+        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; border-color: #bd2130; }
         .card { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         h1, h2 { color: #28a745; }
         .table-responsive { overflow-x: auto; }
@@ -59,7 +61,7 @@
 
         // Utils for date parsing
         const getYear = (date) => date ? parseInt(date.split('-')[0], 10) : 0;
-        const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0; // 1..12
+        const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0;
 
         // Compute group share per year
         const computeGroupShare = (year) => {
@@ -139,7 +141,6 @@
                                             </div>
                                             <button type="submit" className="btn btn-success w-100">Login</button>
                                         </form>
-                                        <div className="mt-3 small text-muted">Default admin: <strong>admin</strong> / <strong>admin</strong> (first-time only)</div>
                                     </div>
                                 </div>
                             </div>
@@ -164,7 +165,7 @@
                 const viewProps = { year, setYear };
                 switch (view) {
                     case 'addMember': return user.role === 'Admin' ? <AddMember onSuccess={() => showAlert('Member added')} /> : <AccessDenied />;
-                    case 'viewMembers': return user.role === 'Admin' ? <ViewMembers /> : <AccessDenied />;
+                    case 'viewMembers': return user.role === 'Admin' ? <ViewMembers onRemoveSuccess={() => showAlert('Member removed')} /> : <AccessDenied />;
                     case 'addPayment': return ['Admin', 'Secretary'].includes(user.role) ? <AddPayment onSuccess={() => showAlert('Payment added')} /> : <AccessDenied />;
                     case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
                     case 'addExpenditure': return ['Admin', 'Secretary'].includes(user.role) ? <AddExpenditure onSuccess={() => showAlert('Expenditure added')} /> : <AccessDenied />;
@@ -292,8 +293,33 @@
         }
 
         // View Members
-        function ViewMembers() {
+        function ViewMembers({ onRemoveSuccess }) {
             const users = loadData('users', []);
+
+            const handleRemove = (name) => {
+                if (name === 'admin') {
+                    alert('Cannot remove default admin account');
+                    return;
+                }
+                if (!confirm(`Are you sure you want to remove ${name}? This will also delete their payments and loans.`)) return;
+
+                // Remove user
+                let updatedUsers = users.filter(u => u.name !== name);
+                saveData('users', updatedUsers);
+
+                // Remove associated payments
+                let payments = loadData('payments', []);
+                payments = payments.filter(p => p.member !== name);
+                saveData('payments', payments);
+
+                // Remove associated loans
+                let loans = loadData('loans', []);
+                loans = loans.filter(l => l.member !== name);
+                saveData('loans', loans);
+
+                onRemoveSuccess();
+            };
+
             return (
                 <ErrorBoundary>
                     <div>
@@ -301,10 +327,24 @@
                         <div className="table-responsive">
                             <table className="table table-striped">
                                 <thead>
-                                    <tr><th>Name</th><th>Role</th></tr>
+                                    <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
                                 </thead>
                                 <tbody>
-                                    {users.map(u => <tr key={u.name}><td>{u.name}</td><td>{u.role}</td></tr>)}
+                                    {users.map(u => (
+                                        <tr key={u.name}>
+                                            <td>{u.name}</td>
+                                            <td>{u.role}</td>
+                                            <td>
+                                                <button 
+                                                    className="btn btn-danger btn-sm" 
+                                                    onClick={() => handleRemove(u.name)}
+                                                    disabled={u.name === 'admin'}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
