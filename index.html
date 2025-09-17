@@ -34,6 +34,9 @@
     <!-- Bootstrap JS & sha256 -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.10.1/src/sha256.min.js"></script>
+    
+    <!-- XLSX for Excel file handling -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -169,9 +172,11 @@
                     case 'addPayment': return ['Admin', 'Secretary'].includes(user.role) ? <AddPayment onSuccess={() => showAlert('Payment added')} /> : <AccessDenied />;
                     case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
                     case 'addExpenditure': return ['Admin', 'Secretary'].includes(user.role) ? <AddExpenditure onSuccess={() => showAlert('Expenditure added')} /> : <AccessDenied />;
-                    case 'viewAll': return ['Admin', 'Secretary', 'Chairman', 'Treasurer'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
+                    case 'viewAll': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
                     case 'viewPersonal': return user.role === 'Member' ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
+                    case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
+                    case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded successfully')} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
             };
@@ -209,8 +214,10 @@
                                 <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
                                 <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
                                 <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('download')}>Download All Data</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('uploadData')}>Upload Data</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('download')}>Download All Data</button></div>
                             </>
                         )}
                         {user.role === 'Secretary' && (
@@ -218,10 +225,17 @@
                                 <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
                                 <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
                                 <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
-                                <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
                             </>
                         )}
-                        {['Chairman','Treasurer'].includes(user.role) && (
+                        {user.role === 'Chairman' && (
+                            <>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
+                            </>
+                        )}
+                        {user.role === 'Treasurer' && (
                             <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
                         )}
                         {user.role === 'Member' && (
@@ -571,11 +585,77 @@
             );
         }
 
+        // Monthly Summary
+        function MonthlySummary({ year, setYear }) {
+            const payments = loadData('payments', []).filter(p => getYear(p.date) === year);
+            const loans = loadData('loans', []).filter(l => getYear(l.date) === year);
+            const expenditures = loadData('expenditures', []).filter(e => getYear(e.date) === year);
+            const users = loadData('users', []);
+
+            const monthlyData = MONTH_NAMES.map((name, i) => {
+                const month = i + 1;
+                const monthPayments = payments.filter(p => getMonth(p.date) === month);
+                const totalPaid = monthPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
+                const monthLoans = loans.filter(l => getMonth(l.date) === month);
+                const totalLoans = monthLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+                const monthExpenditures = expenditures.filter(e => getMonth(e.date) === month);
+                const totalExpenditures = monthExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+                const monthlySums = {};
+                monthPayments.forEach(p => {
+                    monthlySums[p.member] = (monthlySums[p.member] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+                const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+                return { month: name, totalPaid, totalFines, totalLoans, totalExpenditures };
+            });
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <div className="mb-3">
+                            <label className="form-label">Year</label>
+                            <select className="form-select w-auto d-inline-block" value={year} onChange={e => setYear(parseInt(e.target.value, 10))}>
+                                <option value={2024}>2024</option>
+                                <option value={2025}>2025</option>
+                                <option value={2026}>2026</option>
+                            </select>
+                        </div>
+                        <h2>Monthly Summary for {year}</h2>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>Total Paid (KES)</th>
+                                        <th>Total Fines (KES)</th>
+                                        <th>Total Loans (KES)</th>
+                                        <th>Total Expenditures (KES)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {monthlyData.map((m, i) => (
+                                        <tr key={i}>
+                                            <td>{m.month}</td>
+                                            <td>{m.totalPaid.toFixed(2)}</td>
+                                            <td>{m.totalFines}</td>
+                                            <td>{m.totalLoans.toFixed(2)}</td>
+                                            <td>{m.totalExpenditures.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
         // View All Data
         function ViewAllData({ year, setYear }) {
             const users = loadData('users', []);
             const payments = loadData('payments', []);
             const loans = loadData('loans', []);
+            const expenditures = loadData('expenditures', []);
             const share = computeGroupShare(year);
 
             const data = users.map(u => {
@@ -593,6 +673,20 @@
                 return { name: u.name, totalPaid, totalFines, totalLoan, net };
             });
 
+            const yearlyTotals = {
+                totalPaid: payments.filter(p => getYear(p.date) === year).reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0),
+                totalFines: Object.values(
+                    payments.filter(p => getYear(p.date) === year).reduce((acc, p) => {
+                        const key = `${getMonth(p.date)}-${p.member}`;
+                        acc[key] = (acc[key] || 0) + (parseFloat(p.paidIn) || 0);
+                        return acc;
+                    }, {})
+                ).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0),
+                totalLoans: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
+                totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
+                groupShare: share
+            };
+
             return (
                 <ErrorBoundary>
                     <div>
@@ -605,6 +699,20 @@
                             </select>
                         </div>
                         <h2>All Data for {year}</h2>
+                        <div className="row mb-4">
+                            <div className="col-md-4">
+                                <div className="card">
+                                    <div className="card-body">
+                                        <h5 className="card-title">Yearly Summary</h5>
+                                        <p><strong>Total Paid:</strong> {yearlyTotals.totalPaid.toFixed(2)} KES</p>
+                                        <p><strong>Total Fines:</strong> {yearlyTotals.totalFines.toFixed(2)} KES</p>
+                                        <p><strong>Total Loans:</strong> {yearlyTotals.totalLoans.toFixed(2)} KES</p>
+                                        <p><strong>Total Expenditures:</strong> {yearlyTotals.totalExpenditures.toFixed(2)} KES</p>
+                                        <p><strong>Group Share per Member:</strong> {yearlyTotals.groupShare.toFixed(2)} KES</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div className="table-responsive">
                             <table className="table table-striped">
                                 <thead>
@@ -623,7 +731,124 @@
                                 </tbody>
                             </table>
                         </div>
-                        <button className="btn btn-secondary" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Upload Data
+        function UploadData({ onSuccess }) {
+            const [file, setFile] = useState(null);
+            const [error, setError] = useState('');
+
+            const handleFileChange = (e) => {
+                setFile(e.target.files[0]);
+                setError('');
+            };
+
+            const handleUpload = () => {
+                if (!file) {
+                    setError('Please select a file');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const users = loadData('users', []);
+
+                        // Process Payments
+                        const paymentSheet = workbook.Sheets['Payments'];
+                        if (paymentSheet) {
+                            const paymentData = XLSX.utils.sheet_to_json(paymentSheet);
+                            let payments = loadData('payments', []);
+                            paymentData.forEach(row => {
+                                if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
+                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
+                                    if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
+                                        payments.push({
+                                            member: row.Name,
+                                            date: row.Date,
+                                            paidIn: parseFloat(row['Paid In'])
+                                        });
+                                    }
+                                }
+                            });
+                            saveData('payments', payments);
+                        }
+
+                        // Process Loans
+                        const loanSheet = workbook.Sheets['Loans'];
+                        if (loanSheet) {
+                            const loanData = XLSX.utils.sheet_to_json(loanSheet);
+                            let loans = loadData('loans', []);
+                            loanData.forEach(row => {
+                                if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
+                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
+                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
+                                        loans.push({
+                                            member: row.Name,
+                                            date: row.Date,
+                                            amount: parseFloat(row.Amount)
+                                        });
+                                    }
+                                }
+                            });
+                            saveData('loans', loans);
+                        }
+
+                        // Process Expenditures
+                        const expenditureSheet = workbook.Sheets['Expenditures'];
+                        if (expenditureSheet) {
+                            const expenditureData = XLSX.utils.sheet_to_json(expenditureSheet);
+                            let expenditures = loadData('expenditures', []);
+                            expenditureData.forEach(row => {
+                                if (row.Date && row.Amount) {
+                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
+                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
+                                        expenditures.push({
+                                            date: row.Date,
+                                            amount: parseFloat(row.Amount)
+                                        });
+                                    }
+                                }
+                            });
+                            saveData('expenditures', expenditures);
+                        }
+
+                        onSuccess();
+                        setFile(null);
+                    } catch (e) {
+                        setError('Error processing file: ' + e.message);
+                        setTimeout(() => setError(''), 3000);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Upload Data</h2>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                                <div className="mb-3">
+                                    <label className="form-label">Excel File</label>
+                                    <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} />
+                                </div>
+                                <p className="text-muted">
+                                    File must be an Excel spreadsheet with sheets named 'Payments', 'Loans', and 'Expenditures'.
+                                    Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.
+                                    Expenditures format: Date (YYYY-MM-DD), Amount.
+                                </p>
+                                <button className="btn btn-success" onClick={handleUpload} disabled={!file}>Upload Data</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </div>
+                        </div>
                     </div>
                 </ErrorBoundary>
             );
@@ -683,7 +908,7 @@
         function App() {
             const [user, setUser] = useState(null);
 
-            // ensure admin exists on first load
+            // Ensure admin exists on first load
             useEffect(() => {
                 const users = loadData('users', []);
                 if (!users || users.length === 0) {
