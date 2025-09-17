@@ -371,20 +371,20 @@
         // Add Payment
         function AddPayment({ onSuccess }) {
             const [member, setMember] = useState('');
-            const [date, setDate] = useState('');
             const [paidIn, setPaidIn] = useState('');
             const users = loadData('users', []);
 
             const handleSubmit = () => {
-                if (!member || !date || !paidIn) {
+                if (!member || !paidIn) {
                     alert('Please fill all fields');
                     return;
                 }
                 if (!confirm('Confirm adding payment?')) return;
+                const today = new Date().toISOString().split('T')[0];
                 const payments = loadData('payments', []);
-                payments.push({ member, date, paidIn: parseFloat(paidIn) });
+                payments.push({ member, date: today, paidIn: parseFloat(paidIn) });
                 saveData('payments', payments);
-                setPaidIn(''); setDate(''); setMember('');
+                setPaidIn(''); setMember('');
                 onSuccess();
             };
 
@@ -402,10 +402,6 @@
                                     </select>
                                 </div>
                                 <div className="mb-3">
-                                    <label className="form-label">Date</label>
-                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
-                                </div>
-                                <div className="mb-3">
                                     <label className="form-label">Paid In (KES)</label>
                                     <input type="number" step="0.01" className="form-control" value={paidIn} onChange={e => setPaidIn(e.target.value)} required />
                                 </div>
@@ -421,20 +417,20 @@
         // Add Loan
         function AddLoan({ onSuccess }) {
             const [member, setMember] = useState('');
-            const [date, setDate] = useState('');
             const [amount, setAmount] = useState('');
             const users = loadData('users', []);
 
             const handleSubmit = () => {
-                if (!member || !date || !amount) {
+                if (!member || !amount) {
                     alert('Please fill all fields');
                     return;
                 }
                 if (!confirm('Confirm adding loan?')) return;
+                const today = new Date().toISOString().split('T')[0];
                 const loans = loadData('loans', []);
-                loans.push({ member, date, amount: parseFloat(amount) });
+                loans.push({ member, date: today, amount: parseFloat(amount) });
                 saveData('loans', loans);
-                setAmount(''); setDate(''); setMember('');
+                setAmount(''); setMember('');
                 onSuccess();
             };
 
@@ -452,10 +448,6 @@
                                     </select>
                                 </div>
                                 <div className="mb-3">
-                                    <label className="form-label">Date</label>
-                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
-                                </div>
-                                <div className="mb-3">
                                     <label className="form-label">Loan Amount (KES)</label>
                                     <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
                                 </div>
@@ -470,19 +462,19 @@
 
         // Add Expenditure
         function AddExpenditure({ onSuccess }) {
-            const [date, setDate] = useState('');
             const [amount, setAmount] = useState('');
 
             const handleSubmit = () => {
-                if (!date || !amount) {
+                if (!amount) {
                     alert('Please fill all fields');
                     return;
                 }
                 if (!confirm('Confirm adding expenditure?')) return;
+                const today = new Date().toISOString().split('T')[0];
                 const expenditures = loadData('expenditures', []);
-                expenditures.push({ date, amount: parseFloat(amount) });
+                expenditures.push({ date: today, amount: parseFloat(amount) });
                 saveData('expenditures', expenditures);
-                setAmount(''); setDate('');
+                setAmount('');
                 onSuccess();
             };
 
@@ -492,10 +484,6 @@
                         <h2>Add Expenditure</h2>
                         <div className="row justify-content-center">
                             <div className="col-md-6">
-                                <div className="mb-3">
-                                    <label className="form-label">Date</label>
-                                    <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
-                                </div>
                                 <div className="mb-3">
                                     <label className="form-label">Amount (KES)</label>
                                     <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
@@ -511,12 +499,15 @@
 
         // View Personal Data
         function ViewPersonal({ userId, year, setYear }) {
-            const payments = loadData('payments', []).filter(p => p.member === userId && getYear(p.date) === year);
-            const loans = loadData('loans', []).filter(l => l.member === userId && getYear(l.date) === year);
+            const allPayments = loadData('payments', []).filter(p => getYear(p.date) === year);
+            const allLoans = loadData('loans', []).filter(l => getYear(l.date) === year);
+            const allExpenditures = loadData('expenditures', []).filter(e => getYear(e.date) === year);
+            const userPayments = allPayments.filter(p => p.member === userId);
+            const userLoans = allLoans.filter(l => l.member === userId);
             const share = computeGroupShare(year);
 
             const monthlyData = {};
-            payments.forEach(p => {
+            userPayments.forEach(p => {
                 const m = getMonth(p.date);
                 monthlyData[m] = monthlyData[m] || { paid: 0, dates: [] };
                 monthlyData[m].paid += (parseFloat(p.paidIn) || 0);
@@ -525,8 +516,19 @@
 
             const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
-            const totalLoan = loans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const net = totalPaid - totalFines + share - totalLoan;
+
+            // Group totals
+            const monthlySums = {};
+            allPayments.forEach(p => {
+                const key = `${getMonth(p.date)}-${p.member}`;
+                monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
+            });
+            const groupTotalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+            const groupTotalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const groupTotalExp = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            const groupTotalPaid = allPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
 
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
@@ -546,6 +548,20 @@
                             </select>
                         </div>
                         <h2>Personal Financial Data for {year}</h2>
+                        <div className="row mb-4">
+                            <div className="col-md-12">
+                                <div className="card">
+                                    <div className="card-body">
+                                        <h5 className="card-title">Group Summary for {year}</h5>
+                                        <p><strong>Total Paid In:</strong> {groupTotalPaid.toFixed(2)} KES</p>
+                                        <p><strong>Total Fines:</strong> {groupTotalFines} KES</p>
+                                        <p><strong>Total Loans:</strong> {groupTotalLoans.toFixed(2)} KES</p>
+                                        <p><strong>Total Expenditures:</strong> {groupTotalExp.toFixed(2)} KES</p>
+                                        <p><strong>Net Share per Person:</strong> {share.toFixed(2)} KES</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div className="row">
                             <div className="col-md-8">
                                 <h4>Monthly Breakdown</h4>
@@ -758,7 +774,25 @@
                     try {
                         const data = new Uint8Array(e.target.result);
                         const workbook = XLSX.read(data, { type: 'array' });
-                        const users = loadData('users', []);
+                        let users = loadData('users', []);
+
+                        // Process Members
+                        const memberSheet = workbook.Sheets['Members'];
+                        if (memberSheet) {
+                            const memberData = XLSX.utils.sheet_to_json(memberSheet);
+                            memberData.forEach(row => {
+                                if (row.Name && row.Role && row.Password) {
+                                    if (!users.find(u => u.name === row.Name)) {
+                                        users.push({
+                                            name: row.Name,
+                                            role: row.Role,
+                                            password: sha256(row.Password)
+                                        });
+                                    }
+                                }
+                            });
+                            saveData('users', users);
+                        }
 
                         // Process Payments
                         const paymentSheet = workbook.Sheets['Payments'];
@@ -841,8 +875,9 @@
                                     <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} />
                                 </div>
                                 <p className="text-muted">
-                                    File must be an Excel spreadsheet with sheets named 'Payments', 'Loans', and 'Expenditures'.
-                                    Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.
+                                    File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
+                                    Members format: Name, Role, Password (plain text).<br/>
+                                    Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.<br/>
                                     Expenditures format: Date (YYYY-MM-DD), Amount.
                                 </p>
                                 <button className="btn btn-success" onClick={handleUpload} disabled={!file}>Upload Data</button>
