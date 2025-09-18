@@ -21,6 +21,7 @@
         input:invalid { border-color: red; }
         .negative { color: #dc3545 !important; font-weight: bold; }
         .positive { color: #28a745 !important; }
+        .loading { text-align: center; padding: 20px; }
     </style>
 </head>
 <body>
@@ -38,27 +39,88 @@
     <!-- XLSX for Excel file handling -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"></script>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxs__5wmHC3qjd9s0KdC12IkV5huLz52o",
+            authDomain: "ongeniwelfareworking.firebaseapp.com",
+            projectId: "ongeniwelfareworking",
+            storageBucket: "ongeniwelfareworking.firebasestorage.app",
+            messagingSenderId: "131650440596",
+            appId: "1:131650440596:web:c021c95e1cac6217551381",
+            measurementId: "G-F8F3EWSE3S"
+        };
+
+        // Initialize Firebase with error handling
+        let db;
+        try {
+            if (!firebaseConfig.apiKey) {
+                throw new Error("Firebase configuration is missing or invalid. Please update firebaseConfig.");
+            }
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            document.getElementById('root').innerHTML = '<div className="alert alert-danger">Failed to initialize application: ' + e.message + '</div>';
+        }
 
         // Month names
         const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-        // LocalStorage helpers
-        const loadData = (key, defaultValue) => {
+        // Firestore helpers
+        const loadData = async (collection, defaultValue) => {
             try {
-                const item = localStorage.getItem(key);
-                return item ? JSON.parse(item) : defaultValue;
+                if (!db) throw new Error("Database not initialized");
+                const snapshot = await db.collection(collection).get();
+                return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             } catch (e) {
-                console.error(`Error loading ${key}:`, e);
+                console.error(`Error loading ${collection}:`, e);
                 return defaultValue;
             }
         };
-        const saveData = (key, data) => {
+
+        const saveData = async (collection, data) => {
             try {
-                localStorage.setItem(key, JSON.stringify(data));
+                if (!db) throw new Error("Database not initialized");
+                const batch = db.batch();
+                data.forEach(item => {
+                    const docRef = db.collection(collection).doc();
+                    batch.set(docRef, item);
+                });
+                await batch.commit();
             } catch (e) {
-                console.error(`Error saving ${key}:`, e);
+                console.error(`Error saving ${collection}:`, e);
+                throw e;
+            }
+        };
+
+        const addData = async (collection, item) => {
+            try {
+                if (!db) throw new Error("Database not initialized");
+                await db.collection(collection).add(item);
+            } catch (e) {
+                console.error(`Error adding to ${collection}:`, e);
+                throw e;
+            }
+        };
+
+        const deleteData = async (collection, queryField, queryValue) => {
+            try {
+                if (!db) throw new Error("Database not initialized");
+                const snapshot = await db.collection(collection).where(queryField, '==', queryValue).get();
+                const batch = db.batch();
+                snapshot.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            } catch (e) {
+                console.error(`Error deleting from ${collection}:`, e);
+                throw e;
             }
         };
 
@@ -67,39 +129,44 @@
         const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0;
 
         // Compute group share per year
-        const computeGroupShare = (year) => {
-            const payments = loadData('payments', []);
-            const loans = loadData('loans', []);
-            const expenditures = loadData('expenditures', []);
-            const members = loadData('users', []);
-            const yearPayments = payments.filter(p => getYear(p.date) === year);
-            const monthlySums = {};
-            yearPayments.forEach(p => {
-                const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
-                monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
-            });
-            const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
-            const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-            const totalInterest = totalLoans * 0.1;
-            const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-            return members.length ? (totalInterest + totalFines - totalExp) / members.length : 0;
+        const computeGroupShare = async (year) => {
+            try {
+                const payments = await loadData('payments', []);
+                const loans = await loadData('loans', []);
+                const expenditures = await loadData('expenditures', []);
+                const members = await loadData('users', []);
+                const yearPayments = payments.filter(p => getYear(p.date) === year);
+                const monthlySums = {};
+                yearPayments.forEach(p => {
+                    const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
+                    monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+                const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+                const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+                const totalInterest = totalLoans * 0.1;
+                const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+                return members.length ? (totalInterest + totalFines - totalExp) / members.length : 0;
+            } catch (e) {
+                console.error("Error computing group share:", e);
+                return 0;
+            }
         };
 
         // ErrorBoundary
         class ErrorBoundary extends React.Component {
             constructor(props) {
                 super(props);
-                this.state = { hasError: false };
+                this.state = { hasError: false, errorMessage: '' };
             }
-            static getDerivedStateFromError() {
-                return { hasError: true };
+            static getDerivedStateFromError(error) {
+                return { hasError: true, errorMessage: error.message };
             }
             componentDidCatch(error, info) {
                 console.error('ErrorBoundary caught', error, info);
             }
             render() {
                 if (this.state.hasError) {
-                    return <div className="alert alert-danger">Something went wrong. Please refresh the page.</div>;
+                    return <div className="alert alert-danger">Something went wrong: {this.state.errorMessage}</div>;
                 }
                 return this.props.children;
             }
@@ -110,17 +177,27 @@
             const [name, setName] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
 
-            const handleSubmit = (e) => {
+            const handleSubmit = async (e) => {
                 e.preventDefault();
-                const users = loadData('users', []);
-                const hashed = sha256(password || '');
-                const user = users.find(u => u.name === name && u.password === hashed);
-                if (user) {
-                    onLogin(user);
-                } else {
-                    setError('Invalid credentials');
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const hashed = sha256(password || '');
+                    const user = users.find(u => u.name === name && u.password === hashed);
+                    if (user) {
+                        onLogin(user);
+                    } else {
+                        setError('Invalid credentials');
+                        setTimeout(() => setError(''), 3000);
+                    }
+                } catch (e) {
+                    setError('Error logging in: ' + e.message);
                     setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
                 }
             };
 
@@ -133,16 +210,17 @@
                                     <div className="card-body">
                                         <h2 className="card-title text-center">Login</h2>
                                         {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                                        {loading && <div className="loading">Loading...</div>}
                                         <form onSubmit={handleSubmit}>
                                             <div className="mb-3">
                                                 <label className="form-label">Name</label>
-                                                <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required />
+                                                <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required disabled={loading} />
                                             </div>
                                             <div className="mb-3">
                                                 <label className="form-label">Password</label>
-                                                <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required />
+                                                <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required disabled={loading} />
                                             </div>
-                                            <button type="submit" className="btn btn-success w-100">Login</button>
+                                            <button type="submit" className="btn btn-success w-100" disabled={loading}>Login</button>
                                         </form>
                                     </div>
                                 </div>
@@ -255,37 +333,51 @@
             const [name, setName] = useState('');
             const [role, setRole] = useState('Member');
             const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
 
-            const handleSubmit = () => {
+            const handleSubmit = async () => {
                 if (!name || !password) {
-                    alert('Please provide both name and password');
+                    setError('Please provide both name and password');
+                    setTimeout(() => setError(''), 3000);
                     return;
                 }
                 if (!confirm('Confirm adding this member?')) return;
-                const users = loadData('users', []);
-                if (users.find(u => u.name === name)) {
-                    alert('Name already exists');
-                    return;
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    if (users.find(u => u.name === name)) {
+                        setError('Name already exists');
+                        setTimeout(() => setError(''), 3000);
+                        return;
+                    }
+                    await addData('users', { name, role, password: sha256(password) });
+                    setName(''); setPassword(''); setRole('Member');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding member: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
                 }
-                users.push({ name, role, password: sha256(password) });
-                saveData('users', users);
-                setName(''); setPassword(''); setRole('Member');
-                onSuccess();
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Add New Member</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
                         <div className="row justify-content-center">
                             <div className="col-md-6">
                                 <div className="mb-3">
                                     <label className="form-label">Name</label>
-                                    <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required />
+                                    <input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} required disabled={loading} />
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label">Role</label>
-                                    <select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
+                                    <select className="form-select" value={role} onChange={e => setRole(e.target.value)} disabled={loading}>
                                         <option value="Admin">Admin</option>
                                         <option value="Secretary">Secretary</option>
                                         <option value="Chairman">Chairman</option>
@@ -295,10 +387,10 @@
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label">Password</label>
-                                    <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required />
+                                    <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required disabled={loading} />
                                 </div>
-                                <button className="btn btn-success" onClick={handleSubmit}>Add Member</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Member</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                             </div>
                         </div>
                     </div>
@@ -308,61 +400,81 @@
 
         // View Members
         function ViewMembers({ onRemoveSuccess }) {
-            const users = loadData('users', []);
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
 
-            const handleRemove = (name) => {
+            useEffect(() => {
+                setLoading(true);
+                loadData('users', [])
+                    .then(data => {
+                        setUsers(data);
+                        setLoading(false);
+                    })
+                    .catch(e => {
+                        setError('Error loading members: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, []);
+
+            const handleRemove = async (name) => {
                 if (name === 'admin') {
                     alert('Cannot remove default admin account');
                     return;
                 }
                 if (!confirm(`Are you sure you want to remove ${name}? This will also delete their payments and loans.`)) return;
-
-                // Remove user
-                let updatedUsers = users.filter(u => u.name !== name);
-                saveData('users', updatedUsers);
-
-                // Remove associated payments
-                let payments = loadData('payments', []);
-                payments = payments.filter(p => p.member !== name);
-                saveData('payments', payments);
-
-                // Remove associated loans
-                let loans = loadData('loans', []);
-                loans = loans.filter(l => l.member !== name);
-                saveData('loans', loans);
-
-                onRemoveSuccess();
+                setLoading(true);
+                setError('');
+                try {
+                    await Promise.all([
+                        deleteData('users', 'name', name),
+                        deleteData('payments', 'member', name),
+                        deleteData('loans', 'member', name)
+                    ]);
+                    setUsers(users.filter(u => u.name !== name));
+                    onRemoveSuccess();
+                } catch (e) {
+                    setError('Error removing member: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Members List</h2>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
-                                </thead>
-                                <tbody>
-                                    {users.map(u => (
-                                        <tr key={u.name}>
-                                            <td>{u.name}</td>
-                                            <td>{u.role}</td>
-                                            <td>
-                                                <button 
-                                                    className="btn btn-danger btn-sm" 
-                                                    onClick={() => handleRemove(u.name)}
-                                                    disabled={u.name === 'admin'}
-                                                >
-                                                    Remove
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <button className="btn btn-secondary" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div className="table-responsive">
+                                <table className="table table-striped">
+                                    <thead>
+                                        <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {users.map(u => (
+                                            <tr key={u.name}>
+                                                <td>{u.name}</td>
+                                                <td>{u.role}</td>
+                                                <td>
+                                                    <button 
+                                                        className="btn btn-danger btn-sm" 
+                                                        onClick={() => handleRemove(u.name)}
+                                                        disabled={u.name === 'admin' || loading}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        <button className="btn btn-secondary" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                     </div>
                 </ErrorBoundary>
             );
@@ -372,43 +484,71 @@
         function AddPayment({ onSuccess }) {
             const [member, setMember] = useState('');
             const [paidIn, setPaidIn] = useState('');
-            const users = loadData('users', []);
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
 
-            const handleSubmit = () => {
+            useEffect(() => {
+                setLoading(true);
+                loadData('users', [])
+                    .then(data => {
+                        setUsers(data);
+                        setLoading(false);
+                    })
+                    .catch(e => {
+                        setError('Error loading users: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, []);
+
+            const handleSubmit = async () => {
                 if (!member || !paidIn) {
-                    alert('Please fill all fields');
+                    setError('Please fill all fields');
+                    setTimeout(() => setError(''), 3000);
                     return;
                 }
                 if (!confirm('Confirm adding payment?')) return;
-                const today = new Date().toISOString().split('T')[0];
-                const payments = loadData('payments', []);
-                payments.push({ member, date: today, paidIn: parseFloat(paidIn) });
-                saveData('payments', payments);
-                setPaidIn(''); setMember('');
-                onSuccess();
+                setLoading(true);
+                setError('');
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    await addData('payments', { member, date: today, paidIn: parseFloat(paidIn) });
+                    setPaidIn(''); setMember('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding payment: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Add Payment</h2>
-                        <div className="row justify-content-center">
-                            <div className="col-md-6">
-                                <div className="mb-3">
-                                    <label className="form-label">Member</label>
-                                    <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required>
-                                        <option value="">Select Member</option>
-                                        {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
-                                    </select>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="mb-3">
+                                        <label className="form-label">Member</label>
+                                        <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required disabled={loading}>
+                                            <option value="">Select Member</option>
+                                            {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">Paid In (KES)</label>
+                                        <input type="number" step="0.01" className="form-control" value={paidIn} onChange={e => setPaidIn(e.target.value)} required disabled={loading} />
+                                    </div>
+                                    <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Payment</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Paid In (KES)</label>
-                                    <input type="number" step="0.01" className="form-control" value={paidIn} onChange={e => setPaidIn(e.target.value)} required />
-                                </div>
-                                <button className="btn btn-success" onClick={handleSubmit}>Add Payment</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -418,43 +558,71 @@
         function AddLoan({ onSuccess }) {
             const [member, setMember] = useState('');
             const [amount, setAmount] = useState('');
-            const users = loadData('users', []);
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
 
-            const handleSubmit = () => {
+            useEffect(() => {
+                setLoading(true);
+                loadData('users', [])
+                    .then(data => {
+                        setUsers(data);
+                        setLoading(false);
+                    })
+                    .catch(e => {
+                        setError('Error loading users: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, []);
+
+            const handleSubmit = async () => {
                 if (!member || !amount) {
-                    alert('Please fill all fields');
+                    setError('Please fill all fields');
+                    setTimeout(() => setError(''), 3000);
                     return;
                 }
                 if (!confirm('Confirm adding loan?')) return;
-                const today = new Date().toISOString().split('T')[0];
-                const loans = loadData('loans', []);
-                loans.push({ member, date: today, amount: parseFloat(amount) });
-                saveData('loans', loans);
-                setAmount(''); setMember('');
-                onSuccess();
+                setLoading(true);
+                setError('');
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    await addData('loans', { member, date: today, amount: parseFloat(amount) });
+                    setAmount(''); setMember('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding loan: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Add Loan</h2>
-                        <div className="row justify-content-center">
-                            <div className="col-md-6">
-                                <div className="mb-3">
-                                    <label className="form-label">Member</label>
-                                    <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required>
-                                        <option value="">Select Member</option>
-                                        {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
-                                    </select>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="mb-3">
+                                        <label className="form-label">Member</label>
+                                        <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required disabled={loading}>
+                                            <option value="">Select Member</option>
+                                            {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">Loan Amount (KES)</label>
+                                        <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
+                                    </div>
+                                    <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Loan</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Loan Amount (KES)</label>
-                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
-                                </div>
-                                <button className="btn btn-success" onClick={handleSubmit}>Add Loan</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -463,35 +631,49 @@
         // Add Expenditure
         function AddExpenditure({ onSuccess }) {
             const [amount, setAmount] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
 
-            const handleSubmit = () => {
+            const handleSubmit = async () => {
                 if (!amount) {
-                    alert('Please fill all fields');
+                    setError('Please fill all fields');
+                    setTimeout(() => setError(''), 3000);
                     return;
                 }
                 if (!confirm('Confirm adding expenditure?')) return;
-                const today = new Date().toISOString().split('T')[0];
-                const expenditures = loadData('expenditures', []);
-                expenditures.push({ date: today, amount: parseFloat(amount) });
-                saveData('expenditures', expenditures);
-                setAmount('');
-                onSuccess();
+                setLoading(true);
+                setError('');
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    await addData('expenditures', { date: today, amount: parseFloat(amount) });
+                    setAmount('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding expenditure: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Add Expenditure</h2>
-                        <div className="row justify-content-center">
-                            <div className="col-md-6">
-                                <div className="mb-3">
-                                    <label className="form-label">Amount (KES)</label>
-                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required />
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="mb-3">
+                                        <label className="form-label">Amount (KES)</label>
+                                        <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
+                                    </div>
+                                    <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditure</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                                 </div>
-                                <button className="btn btn-success" onClick={handleSubmit}>Add Expenditure</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -499,12 +681,35 @@
 
         // View Personal Data
         function ViewPersonal({ userId, year, setYear }) {
-            const allPayments = loadData('payments', []).filter(p => getYear(p.date) === year);
-            const allLoans = loadData('loans', []).filter(l => getYear(l.date) === year);
-            const allExpenditures = loadData('expenditures', []).filter(e => getYear(e.date) === year);
+            const [allPayments, setAllPayments] = useState([]);
+            const [allLoans, setAllLoans] = useState([]);
+            const [allExpenditures, setAllExpenditures] = useState([]);
+            const [share, setShare] = useState(0);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                setLoading(true);
+                setError('');
+                Promise.all([
+                    loadData('payments', []).then(data => setAllPayments(data.filter(p => getYear(p.date) === year))),
+                    loadData('loans', []).then(data => setAllLoans(data.filter(l => getYear(l.date) === year))),
+                    loadData('expenditures', []).then(data => setAllExpenditures(data.filter(e => getYear(e.date) === year))),
+                    computeGroupShare(year).then(data => setShare(data))
+                ])
+                    .then(() => setLoading(false))
+                    .catch(e => {
+                        setError('Error loading data: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, [year]);
+
+            if (loading) return <div className="loading">Loading...</div>;
+            if (error) return <div className="alert alert-danger">{error}</div>;
+
             const userPayments = allPayments.filter(p => p.member === userId);
             const userLoans = allLoans.filter(l => l.member === userId);
-            const share = computeGroupShare(year);
 
             const monthlyData = {};
             userPayments.forEach(p => {
@@ -519,7 +724,6 @@
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const net = totalPaid - totalFines + share - totalLoan;
 
-            // Group totals
             const monthlySums = {};
             allPayments.forEach(p => {
                 const key = `${getMonth(p.date)}-${p.member}`;
@@ -603,10 +807,32 @@
 
         // Monthly Summary
         function MonthlySummary({ year, setYear }) {
-            const payments = loadData('payments', []).filter(p => getYear(p.date) === year);
-            const loans = loadData('loans', []).filter(l => getYear(l.date) === year);
-            const expenditures = loadData('expenditures', []).filter(e => getYear(e.date) === year);
-            const users = loadData('users', []);
+            const [payments, setPayments] = useState([]);
+            const [loans, setLoans] = useState([]);
+            const [expenditures, setExpenditures] = useState([]);
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                setLoading(true);
+                setError('');
+                Promise.all([
+                    loadData('payments', []).then(data => setPayments(data.filter(p => getYear(p.date) === year))),
+                    loadData('loans', []).then(data => setLoans(data.filter(l => getYear(l.date) === year))),
+                    loadData('expenditures', []).then(data => setExpenditures(data.filter(e => getYear(e.date) === year))),
+                    loadData('users', []).then(data => setUsers(data))
+                ])
+                    .then(() => setLoading(false))
+                    .catch(e => {
+                        setError('Error loading data: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, [year]);
+
+            if (loading) return <div className="loading">Loading...</div>;
+            if (error) return <div className="alert alert-danger">{error}</div>;
 
             const monthlyData = MONTH_NAMES.map((name, i) => {
                 const month = i + 1;
@@ -668,11 +894,34 @@
 
         // View All Data
         function ViewAllData({ year, setYear }) {
-            const users = loadData('users', []);
-            const payments = loadData('payments', []);
-            const loans = loadData('loans', []);
-            const expenditures = loadData('expenditures', []);
-            const share = computeGroupShare(year);
+            const [users, setUsers] = useState([]);
+            const [payments, setPayments] = useState([]);
+            const [loans, setLoans] = useState([]);
+            const [expenditures, setExpenditures] = useState([]);
+            const [share, setShare] = useState(0);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                setLoading(true);
+                setError('');
+                Promise.all([
+                    loadData('users', []).then(data => setUsers(data)),
+                    loadData('payments', []).then(data => setPayments(data)),
+                    loadData('loans', []).then(data => setLoans(data)),
+                    loadData('expenditures', []).then(data => setExpenditures(data)),
+                    computeGroupShare(year).then(data => setShare(data))
+                ])
+                    .then(() => setLoading(false))
+                    .catch(e => {
+                        setError('Error loading data: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, [year]);
+
+            if (loading) return <div className="loading">Loading...</div>;
+            if (error) return <div className="alert alert-danger">{error}</div>;
 
             const data = users.map(u => {
                 const userPayments = payments.filter(p => p.member === u.name && getYear(p.date) === year);
@@ -757,53 +1006,58 @@
         function UploadData({ onSuccess }) {
             const [file, setFile] = useState(null);
             const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
 
             const handleFileChange = (e) => {
                 setFile(e.target.files[0]);
                 setError('');
             };
 
-            const handleUpload = () => {
+            const handleUpload = async () => {
                 if (!file) {
                     setError('Please select a file');
+                    setTimeout(() => setError(''), 3000);
                     return;
                 }
-
+                setLoading(true);
+                setError('');
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => {
                     try {
                         const data = new Uint8Array(e.target.result);
                         const workbook = XLSX.read(data, { type: 'array' });
-                        let users = loadData('users', []);
+                        let users = await loadData('users', []);
 
                         // Process Members
                         const memberSheet = workbook.Sheets['Members'];
                         if (memberSheet) {
                             const memberData = XLSX.utils.sheet_to_json(memberSheet);
+                            const batch = db.batch();
                             memberData.forEach(row => {
-                                if (row.Name && row.Role && row.Password) {
-                                    if (!users.find(u => u.name === row.Name)) {
-                                        users.push({
-                                            name: row.Name,
-                                            role: row.Role,
-                                            password: sha256(row.Password)
-                                        });
-                                    }
+                                if (row.Name && row.Role && row.Password && !users.find(u => u.name === row.Name)) {
+                                    const docRef = db.collection('users').doc();
+                                    batch.set(docRef, {
+                                        name: row.Name,
+                                        role: row.Role,
+                                        password: sha256(row.Password)
+                                    });
                                 }
                             });
-                            saveData('users', users);
+                            await batch.commit();
+                            users = await loadData('users', []);
                         }
 
                         // Process Payments
                         const paymentSheet = workbook.Sheets['Payments'];
                         if (paymentSheet) {
                             const paymentData = XLSX.utils.sheet_to_json(paymentSheet);
-                            let payments = loadData('payments', []);
+                            const batch = db.batch();
                             paymentData.forEach(row => {
                                 if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
-                                        payments.push({
+                                        const docRef = db.collection('payments').doc();
+                                        batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
                                             paidIn: parseFloat(row['Paid In'])
@@ -811,19 +1065,20 @@
                                     }
                                 }
                             });
-                            saveData('payments', payments);
+                            await batch.commit();
                         }
 
                         // Process Loans
                         const loanSheet = workbook.Sheets['Loans'];
                         if (loanSheet) {
                             const loanData = XLSX.utils.sheet_to_json(loanSheet);
-                            let loans = loadData('loans', []);
+                            const batch = db.batch();
                             loanData.forEach(row => {
                                 if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        loans.push({
+                                        const docRef = db.collection('loans').doc();
+                                        batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
                                             amount: parseFloat(row.Amount)
@@ -831,26 +1086,27 @@
                                     }
                                 }
                             });
-                            saveData('loans', loans);
+                            await batch.commit();
                         }
 
                         // Process Expenditures
                         const expenditureSheet = workbook.Sheets['Expenditures'];
                         if (expenditureSheet) {
                             const expenditureData = XLSX.utils.sheet_to_json(expenditureSheet);
-                            let expenditures = loadData('expenditures', []);
+                            const batch = db.batch();
                             expenditureData.forEach(row => {
                                 if (row.Date && row.Amount) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        expenditures.push({
+                                        const docRef = db.collection('expenditures').doc();
+                                        batch.set(docRef, {
                                             date: row.Date,
                                             amount: parseFloat(row.Amount)
                                         });
                                     }
                                 }
                             });
-                            saveData('expenditures', expenditures);
+                            await batch.commit();
                         }
 
                         onSuccess();
@@ -858,6 +1114,8 @@
                     } catch (e) {
                         setError('Error processing file: ' + e.message);
                         setTimeout(() => setError(''), 3000);
+                    } finally {
+                        setLoading(false);
                     }
                 };
                 reader.readAsArrayBuffer(file);
@@ -867,23 +1125,26 @@
                 <ErrorBoundary>
                     <div>
                         <h2>Upload Data</h2>
-                        <div className="row justify-content-center">
-                            <div className="col-md-6">
-                                {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
-                                <div className="mb-3">
-                                    <label className="form-label">Excel File</label>
-                                    <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} />
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="mb-3">
+                                        <label className="form-label">Excel File</label>
+                                        <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loading} />
+                                    </div>
+                                    <p className="text-muted">
+                                        File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
+                                        Members format: Name, Role, Password (plain text).<br/>
+                                        Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.<br/>
+                                        Expenditures format: Date (YYYY-MM-DD), Amount.
+                                    </p>
+                                    <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                                 </div>
-                                <p className="text-muted">
-                                    File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
-                                    Members format: Name, Role, Password (plain text).<br/>
-                                    Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.<br/>
-                                    Expenditures format: Date (YYYY-MM-DD), Amount.
-                                </p>
-                                <button className="btn btn-success" onClick={handleUpload} disabled={!file}>Upload Data</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -891,49 +1152,67 @@
 
         // Download Data
         function DownloadData({ year }) {
-            const download = () => {
-                const users = loadData('users', []);
-                const payments = loadData('payments', []);
-                const loans = loadData('loans', []);
-                const expenditures = loadData('expenditures', []);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
 
-                let csv = 'Members\nID,Name,Role\n';
-                users.forEach((u, i) => {
-                    csv += `${i + 1},${u.name},${u.role}\n`;
-                });
+            const download = async () => {
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const payments = await loadData('payments', []);
+                    const loans = await loadData('loans', []);
+                    const expenditures = await loadData('expenditures', []);
 
-                csv += '\nPayments\nName,Date,Paid In\n';
-                payments.filter(p => getYear(p.date) === year).forEach(p => {
-                    csv += `${p.member},${p.date},${p.paidIn}\n`;
-                });
+                    let csv = 'Members\nID,Name,Role\n';
+                    users.forEach((u, i) => {
+                        csv += `${i + 1},${u.name},${u.role}\n`;
+                    });
 
-                csv += '\nLoans\nName,Date,Amount\n';
-                loans.filter(l => getYear(l.date) === year).forEach(l => {
-                    csv += `${l.member},${l.date},${l.amount}\n`;
-                });
+                    csv += '\nPayments\nName,Date,Paid In\n';
+                    payments.filter(p => getYear(p.date) === year).forEach(p => {
+                        csv += `${p.member},${p.date},${p.paidIn}\n`;
+                    });
 
-                csv += '\nExpenditures\nDate,Amount\n';
-                expenditures.filter(e => getYear(e.date) === year).forEach(e => {
-                    csv += `${e.date},${e.amount}\n`;
-                });
+                    csv += '\nLoans\nName,Date,Amount\n';
+                    loans.filter(l => getYear(l.date) === year).forEach(l => {
+                        csv += `${l.member},${l.date},${l.amount}\n`;
+                    });
 
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `welfare_data_${year}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
+                    csv += '\nExpenditures\nDate,Amount\n';
+                    expenditures.filter(e => getYear(e.date) === year).forEach(e => {
+                        csv += `${e.date},${e.amount}\n`;
+                    });
+
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `welfare_data_${year}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    setError('Error downloading data: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Download Data for {year}</h2>
-                        <button className="btn btn-success" onClick={download}>Download CSV</button>
-                        <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <>
+                                <button className="btn btn-success" onClick={download}>Download CSV</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                            </>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -942,23 +1221,37 @@
         // Main App
         function App() {
             const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
 
             // Ensure admin exists on first load
             useEffect(() => {
-                const users = loadData('users', []);
-                if (!users || users.length === 0) {
-                    const defaultAdmin = [{ name: 'admin', role: 'Admin', password: sha256('admin') }];
-                    saveData('users', defaultAdmin);
-                }
-                const storedUser = sessionStorage.getItem('user');
-                if (storedUser) {
+                const initializeAdmin = async () => {
+                    setLoading(true);
+                    setError('');
                     try {
-                        setUser(JSON.parse(storedUser));
+                        if (!db) throw new Error("Database not initialized");
+                        const users = await loadData('users', []);
+                        if (!users || users.length === 0) {
+                            await addData('users', { name: 'admin', role: 'Admin', password: sha256('admin') });
+                        }
+                        const storedUser = sessionStorage.getItem('user');
+                        if (storedUser) {
+                            try {
+                                setUser(JSON.parse(storedUser));
+                            } catch (e) {
+                                console.error('Invalid session user', e);
+                                sessionStorage.removeItem('user');
+                            }
+                        }
                     } catch (e) {
-                        console.error('Invalid session user', e);
-                        sessionStorage.removeItem('user');
+                        setError('Error initializing app: ' + e.message);
+                        setTimeout(() => setError(''), 3000);
+                    } finally {
+                        setLoading(false);
                     }
-                }
+                };
+                initializeAdmin();
             }, []);
 
             const handleLogin = (userData) => {
@@ -970,6 +1263,9 @@
                 sessionStorage.removeItem('user');
                 setUser(null);
             };
+
+            if (error) return <div className="alert alert-danger">{error}</div>;
+            if (loading) return <div className="loading">Loading...</div>;
 
             return (
                 <ErrorBoundary>
