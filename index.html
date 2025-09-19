@@ -199,6 +199,14 @@
         const getYear = (date) => date ? parseInt(date.split('-')[0], 10) : 0;
         const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0;
 
+        // Validate date format (YYYY-MM-DD)
+        const isValidDate = (dateStr) => {
+            const regex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!regex.test(dateStr)) return false;
+            const date = new Date(dateStr);
+            return date instanceof Date && !isNaN(date);
+        };
+
         // Compute group share per year
         const computeGroupShare = async (year) => {
             try {
@@ -385,7 +393,7 @@
                     case 'viewPersonal': return user.role === 'Member' ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
                     case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
-                    case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded successfully')} /> : <AccessDenied />;
+                    case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={(counts) => showAlert(`Data uploaded: ${counts.members} members, ${counts.payments} payments, ${counts.loans} loans, ${counts.expenditures} expenditures`)} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
             };
@@ -1141,116 +1149,246 @@
             const [loading, setLoading] = useState(false);
 
             const handleFileChange = (e) => {
-                setFile(e.target.files[0]);
+                const selectedFile = e.target.files[0];
+                if (selectedFile && !selectedFile.name.match(/\.(xlsx|xls)$/)) {
+                    setError('Please select a valid Excel file (.xlsx or .xls)');
+                    setTimeout(() => setError(''), 5000);
+                    setFile(null);
+                    return;
+                }
+                setFile(selectedFile);
                 setError('');
             };
 
             const handleUpload = async () => {
                 if (!file) {
                     setError('Please select a file');
-                    setTimeout(() => setError(''), 3000);
+                    setTimeout(() => setError(''), 5000);
                     return;
                 }
+                if (!confirm('Confirm uploading this file? This will add new records to the database.')) return;
                 setLoading(true);
                 setError('');
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        let users = await loadData('users', []);
+                const counts = { members: 0, payments: 0, loans: 0, expenditures: 0 };
+                try {
+                    await initializeFirebase();
+                    if (!db) throw new Error('Database not initialized');
 
-                        // Process Members
-                        const memberSheet = workbook.Sheets['Members'];
-                        if (memberSheet) {
-                            const memberData = XLSX.utils.sheet_to_json(memberSheet);
-                            const batch = firebase.writeBatch(db);
-                            memberData.forEach(row => {
-                                if (row.Name && row.Role && row.Password && !users.find(u => u.name === row.Name)) {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+
+                            // Validate sheet names
+                            const requiredSheets = ['Members', 'Payments', 'Loans', 'Expenditures'];
+                            const sheetNames = workbook.SheetNames;
+                            const missingSheets = requiredSheets.filter(sheet => !sheetNames.includes(sheet));
+                            if (missingSheets.length > 0) {
+                                throw new Error(`Missing required sheets: ${missingSheets.join(', ')}`);
+                            }
+
+                            // Load existing data to check for duplicates
+                            const [existingUsers, existingPayments, existingLoans, existingExpenditures] = await Promise.all([
+                                loadData('users', []),
+                                loadData('payments', []),
+                                loadData('loans', []),
+                                loadData('expenditures', [])
+                            ]);
+
+                            // Process Members
+                            const memberSheet = workbook.Sheets['Members'];
+                            if (memberSheet) {
+                                const memberData = XLSX.utils.sheet_to_json(memberSheet);
+                                const batch = firebase.writeBatch(db);
+                                let newMembers = 0;
+                                for (const row of memberData) {
+                                    if (!row.Name || !row.Role || !row.Password) {
+                                        console.warn(`Skipping invalid member row: ${JSON.stringify(row)}`);
+                                        continue;
+                                    }
+                                    if (existingUsers.some(u => u.name === row.Name)) {
+                                        console.warn(`Member ${row.Name} already exists, skipping`);
+                                        continue;
+                                    }
                                     const docRef = firebase.doc(firebase.collection(db, 'users'));
                                     batch.set(docRef, {
-                                        name: row.Name,
-                                        role: row.Role,
-                                        password: sha256(row.Password)
+                                        name: String(row.Name).trim(),
+                                        role: String(row.Role).trim(),
+                                        password: sha256(String(row.Password).trim())
                                     });
+                                    newMembers++;
                                 }
-                            });
-                            await batch.commit();
-                            users = await loadData('users', []);
-                        }
+                                if (newMembers > 0) {
+                                    await batch.commit();
+                                    counts.members = newMembers;
+                                }
+                            }
 
-                        // Process Payments
-                        const paymentSheet = workbook.Sheets['Payments'];
-                        if (paymentSheet) {
-                            const paymentData = XLSX.utils.sheet_to_json(paymentSheet);
-                            const batch = firebase.writeBatch(db);
-                            paymentData.forEach(row => {
-                                if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'payments'));
-                                        batch.set(docRef, {
-                                            member: row.Name,
-                                            date: row.Date,
-                                            paidIn: parseFloat(row['Paid In'])
-                                        });
+                            // Reload users after adding new ones
+                            const users = await loadData('users', []);
+
+                            // Process Payments
+                            const paymentSheet = workbook.Sheets['Payments'];
+                            if (paymentSheet) {
+                                const paymentData = XLSX.utils.sheet_to_json(paymentSheet);
+                                const batch = firebase.writeBatch(db);
+                                let newPayments = 0;
+                                for (const row of paymentData) {
+                                    if (!row.Name || !row.Date || row['Paid In'] === undefined || row['Paid In'] === null) {
+                                        console.warn(`Skipping invalid payment row: ${JSON.stringify(row)}`);
+                                        continue;
                                     }
-                                }
-                            });
-                            await batch.commit();
-                        }
-
-                        // Process Loans
-                        const loanSheet = workbook.Sheets['Loans'];
-                        if (loanSheet) {
-                            const loanData = XLSX.utils.sheet_to_json(loanSheet);
-                            const batch = firebase.writeBatch(db);
-                            loanData.forEach(row => {
-                                if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'loans'));
-                                        batch.set(docRef, {
-                                            member: row.Name,
-                                            date: row.Date,
-                                            amount: parseFloat(row.Amount)
-                                        });
+                                    const dateStr = String(row.Date).trim();
+                                    if (!isValidDate(dateStr)) {
+                                        console.warn(`Invalid date format in payment row: ${dateStr}`);
+                                        continue;
                                     }
-                                }
-                            });
-                            await batch.commit();
-                        }
-
-                        // Process Expenditures
-                        const expenditureSheet = workbook.Sheets['Expenditures'];
-                        if (expenditureSheet) {
-                            const expenditureData = XLSX.utils.sheet_to_json(expenditureSheet);
-                            const batch = firebase.writeBatch(db);
-                            expenditureData.forEach(row => {
-                                if (row.Date && row.Amount) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'expenditures'));
-                                        batch.set(docRef, {
-                                            date: row.Date,
-                                            amount: parseFloat(row.Amount)
-                                        });
+                                    if (!users.some(u => u.name === row.Name)) {
+                                        console.warn(`Member ${row.Name} not found for payment, skipping`);
+                                        continue;
                                     }
+                                    const paidIn = parseFloat(row['Paid In']);
+                                    if (isNaN(paidIn) || paidIn < 0) {
+                                        console.warn(`Invalid Paid In amount in payment row: ${row['Paid In']}`);
+                                        continue;
+                                    }
+                                    // Check for duplicate payment (same member, date, and amount)
+                                    const isDuplicate = existingPayments.some(p => 
+                                        p.member === row.Name && p.date === dateStr && p.paidIn === paidIn
+                                    );
+                                    if (isDuplicate) {
+                                        console.warn(`Duplicate payment for ${row.Name} on ${dateStr}, skipping`);
+                                        continue;
+                                    }
+                                    const docRef = firebase.doc(firebase.collection(db, 'payments'));
+                                    batch.set(docRef, {
+                                        member: String(row.Name).trim(),
+                                        date: dateStr,
+                                        paidIn: paidIn
+                                    });
+                                    newPayments++;
                                 }
-                            });
-                            await batch.commit();
-                        }
+                                if (newPayments > 0) {
+                                    await batch.commit();
+                                    counts.payments = newPayments;
+                                }
+                            }
 
-                        onSuccess();
-                        setFile(null);
-                    } catch (e) {
-                        setError('Error processing file: ' + e.message);
-                        setTimeout(() => setError(''), 3000);
-                    } finally {
+                            // Process Loans
+                            const loanSheet = workbook.Sheets['Loans'];
+                            if (loanSheet) {
+                                const loanData = XLSX.utils.sheet_to_json(loanSheet);
+                                const batch = firebase.writeBatch(db);
+                                let newLoans = 0;
+                                for (const row of loanData) {
+                                    if (!row.Name || !row.Date || row.Amount === undefined || row.Amount === null) {
+                                        console.warn(`Skipping invalid loan row: ${JSON.stringify(row)}`);
+                                        continue;
+                                    }
+                                    const dateStr = String(row.Date).trim();
+                                    if (!isValidDate(dateStr)) {
+                                        console.warn(`Invalid date format in loan row: ${dateStr}`);
+                                        continue;
+                                    }
+                                    if (!users.some(u => u.name === row.Name)) {
+                                        console.warn(`Member ${row.Name} not found for loan, skipping`);
+                                        continue;
+                                    }
+                                    const amount = parseFloat(row.Amount);
+                                    if (isNaN(amount) || amount < 0) {
+                                        console.warn(`Invalid Amount in loan row: ${row.Amount}`);
+                                        continue;
+                                    }
+                                    // Check for duplicate loan (same member, date, and amount)
+                                    const isDuplicate = existingLoans.some(l => 
+                                        l.member === row.Name && l.date === dateStr && l.amount === amount
+                                    );
+                                    if (isDuplicate) {
+                                        console.warn(`Duplicate loan for ${row.Name} on ${dateStr}, skipping`);
+                                        continue;
+                                    }
+                                    const docRef = firebase.doc(firebase.collection(db, 'loans'));
+                                    batch.set(docRef, {
+                                        member: String(row.Name).trim(),
+                                        date: dateStr,
+                                        amount: amount
+                                    });
+                                    newLoans++;
+                                }
+                                if (newLoans > 0) {
+                                    await batch.commit();
+                                    counts.loans = newLoans;
+                                }
+                            }
+
+                            // Process Expenditures
+                            const expenditureSheet = workbook.Sheets['Expenditures'];
+                            if (expenditureSheet) {
+                                const expenditureData = XLSX.utils.sheet_to_json(expenditureSheet);
+                                const batch = firebase.writeBatch(db);
+                                let newExpenditures = 0;
+                                for (const row of expenditureData) {
+                                    if (!row.Date || row.Amount === undefined || row.Amount === null) {
+                                        console.warn(`Skipping invalid expenditure row: ${JSON.stringify(row)}`);
+                                        continue;
+                                    }
+                                    const dateStr = String(row.Date).trim();
+                                    if (!isValidDate(dateStr)) {
+                                        console.warn(`Invalid date format in expenditure row: ${dateStr}`);
+                                        continue;
+                                    }
+                                    const amount = parseFloat(row.Amount);
+                                    if (isNaN(amount) || amount < 0) {
+                                        console.warn(`Invalid Amount in expenditure row: ${row.Amount}`);
+                                        continue;
+                                    }
+                                    // Check for duplicate expenditure (same date and amount)
+                                    const isDuplicate = existingExpenditures.some(e => 
+                                        e.date === dateStr && e.amount === amount
+                                    );
+                                    if (isDuplicate) {
+                                        console.warn(`Duplicate expenditure on ${dateStr}, skipping`);
+                                        continue;
+                                    }
+                                    const docRef = firebase.doc(firebase.collection(db, 'expenditures'));
+                                    batch.set(docRef, {
+                                        date: dateStr,
+                                        amount: amount
+                                    });
+                                    newExpenditures++;
+                                }
+                                if (newExpenditures > 0) {
+                                    await batch.commit();
+                                    counts.expenditures = newExpenditures;
+                                }
+                            }
+
+                            if (counts.members === 0 && counts.payments === 0 && counts.loans === 0 && counts.expenditures === 0) {
+                                setError('No new valid data found to upload. Check file content and format.');
+                                setTimeout(() => setError(''), 5000);
+                            } else {
+                                onSuccess(counts);
+                                setFile(null);
+                            }
+                        } catch (e) {
+                            setError(`Error processing file: ${e.message}`);
+                            setTimeout(() => setError(''), 5000);
+                        } finally {
+                            setLoading(false);
+                        }
+                    };
+                    reader.onerror = () => {
+                        setError('Error reading file. Please try again.');
                         setLoading(false);
-                    }
-                };
-                reader.readAsArrayBuffer(file);
+                        setTimeout(() => setError(''), 5000);
+                    };
+                    reader.readAsArrayBuffer(file);
+                } catch (e) {
+                    setError(`Error uploading data: ${e.message}`);
+                    setTimeout(() => setError(''), 5000);
+                    setLoading(false);
+                }
             };
 
             return (
@@ -1258,7 +1396,7 @@
                     <div>
                         <h2>Upload Data</h2>
                         {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
-                        {loading && <div className="loading">Loading...</div>}
+                        {loading && <div className="loading">Processing file...</div>}
                         {!loading && (
                             <div className="row justify-content-center">
                                 <div className="col-md-6">
@@ -1268,9 +1406,11 @@
                                     </div>
                                     <p className="text-muted">
                                         File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
-                                        Members format: Name, Role, Password (plain text).<br/>
-                                        Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.<br/>
-                                        Expenditures format: Date (YYYY-MM-DD), Amount.
+                                        Members format: Name (string), Role (string), Password (plain text).<br/>
+                                        Payments format: Name (string), Date (YYYY-MM-DD), Paid In (number).<br/>
+                                        Loans format: Name (string), Date (YYYY-MM-DD), Amount (number).<br/>
+                                        Expenditures format: Date (YYYY-MM-DD), Amount (number).<br/>
+                                        Duplicate records (same member/date/amount) will be skipped.
                                     </p>
                                     <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
                                     <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
