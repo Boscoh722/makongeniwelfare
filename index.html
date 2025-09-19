@@ -22,6 +22,15 @@
         .negative { color: #dc3545 !important; font-weight: bold; }
         .positive { color: #28a745 !important; }
         .loading { text-align: center; padding: 20px; }
+        .init-error { 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+            border: 1px solid #dc3545; 
+            border-radius: 5px; 
+            background-color: #f8d7da; 
+            color: #721c24; 
+        }
     </style>
 </head>
 <body>
@@ -39,10 +48,15 @@
     <!-- XLSX for Excel file handling -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"></script>
+    <!-- Firebase SDK (Modular Imports) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+
+        // Make Firebase available globally
+        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch };
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -58,68 +72,125 @@
             measurementId: "G-F8F3EWSE3S"
         };
 
-        // Initialize Firebase with error handling
-        let db;
-        try {
-            if (!firebaseConfig.apiKey) {
-                throw new Error("Firebase configuration is missing or invalid. Please update firebaseConfig.");
-            }
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-        } catch (e) {
-            console.error("Firebase initialization failed:", e);
-            document.getElementById('root').innerHTML = '<div className="alert alert-danger">Failed to initialize application: ' + e.message + '</div>';
-        }
+        // Global database instance
+        let db = null;
+        let isFirebaseInitialized = false;
+        let initializationPromise = null;
+
+        // Initialize Firebase with retry logic
+        const initializeFirebase = async () => {
+            if (isFirebaseInitialized) return true;
+            if (initializationPromise) return initializationPromise;
+
+            initializationPromise = (async () => {
+                try {
+                    if (!firebaseConfig.apiKey) {
+                        throw new Error("Firebase configuration is missing or invalid.");
+                    }
+
+                    // Initialize Firebase app
+                    const app = firebase.initializeApp(firebaseConfig);
+                    db = firebase.getFirestore(app);
+                    
+                    // Check if persistence is supported
+                    try {
+                        await firebase.enableIndexedDbPersistence(db).catch(err => {
+                            console.warn("Offline persistence not supported:", err.code);
+                            if (err.code === 'failed-precondition') {
+                                console.warn("Multiple tabs open, persistence can only be enabled in one tab.");
+                            } else if (err.code === 'unimplemented') {
+                                console.warn("Browser does not support persistence.");
+                            }
+                        });
+                    } catch (persistenceError) {
+                        console.warn("Persistence setup failed, continuing without offline support:", persistenceError);
+                    }
+
+                    isFirebaseInitialized = true;
+                    console.log("Firebase initialized successfully");
+                    return true;
+                } catch (e) {
+                    console.error("Firebase initialization failed:", e);
+                    isFirebaseInitialized = false;
+                    initializationPromise = null;
+                    return false;
+                }
+            })();
+
+            return initializationPromise;
+        };
 
         // Month names
         const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-        // Firestore helpers
-        const loadData = async (collection, defaultValue) => {
+        // Firestore helpers with corrected modular syntax
+        const loadData = async (collectionName, defaultValue = []) => {
             try {
-                if (!db) throw new Error("Database not initialized");
-                const snapshot = await db.collection(collection).get();
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                const collRef = firebase.collection(db, collectionName);
+                const snapshot = await firebase.getDocs(collRef);
                 return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             } catch (e) {
-                console.error(`Error loading ${collection}:`, e);
+                console.error(`Error loading ${collectionName}:`, e);
                 return defaultValue;
             }
         };
 
-        const saveData = async (collection, data) => {
+        const saveData = async (collectionName, data) => {
             try {
-                if (!db) throw new Error("Database not initialized");
-                const batch = db.batch();
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                const batch = firebase.writeBatch(db);
                 data.forEach(item => {
-                    const docRef = db.collection(collection).doc();
+                    const docRef = firebase.collection(db, collectionName).doc();
                     batch.set(docRef, item);
                 });
                 await batch.commit();
+                return true;
             } catch (e) {
-                console.error(`Error saving ${collection}:`, e);
+                console.error(`Error saving ${collectionName}:`, e);
                 throw e;
             }
         };
 
-        const addData = async (collection, item) => {
+        const addData = async (collectionName, item) => {
             try {
-                if (!db) throw new Error("Database not initialized");
-                await db.collection(collection).add(item);
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                await firebase.addDoc(firebase.collection(db, collectionName), item);
+                return true;
             } catch (e) {
-                console.error(`Error adding to ${collection}:`, e);
+                console.error(`Error adding to ${collectionName}:`, e);
                 throw e;
             }
         };
 
-        const deleteData = async (collection, queryField, queryValue) => {
+        const deleteData = async (collectionName, queryField, queryValue) => {
             try {
-                if (!db) throw new Error("Database not initialized");
-                const snapshot = await db.collection(collection).where(queryField, '==', queryValue).get();
-                const batch = db.batch();
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                const collRef = firebase.collection(db, collectionName);
+                const q = firebase.query(collRef, firebase.where(queryField, '==', queryValue));
+                const snapshot = await firebase.getDocs(q);
+                const batch = firebase.writeBatch(db);
                 snapshot.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
+                return true;
             } catch (e) {
-                console.error(`Error deleting from ${collection}:`, e);
+                console.error(`Error deleting from ${collectionName}:`, e);
                 throw e;
             }
         };
@@ -135,16 +206,20 @@
                 const loans = await loadData('loans', []);
                 const expenditures = await loadData('expenditures', []);
                 const members = await loadData('users', []);
+                
                 const yearPayments = payments.filter(p => getYear(p.date) === year);
                 const monthlySums = {};
+                
                 yearPayments.forEach(p => {
                     const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
                     monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
                 });
+                
                 const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
                 const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalInterest = totalLoans * 0.1;
                 const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+                
                 return members.length ? (totalInterest + totalFines - totalExp) / members.length : 0;
             } catch (e) {
                 console.error("Error computing group share:", e);
@@ -170,6 +245,62 @@
                 }
                 return this.props.children;
             }
+        }
+
+        // Database Initialization Check Component
+        function DatabaseInitializer({ children }) {
+            const [isInitialized, setIsInitialized] = useState(false);
+            const [error, setError] = useState('');
+            const [retryCount, setRetryCount] = useState(0);
+            const maxRetries = 3;
+
+            useEffect(() => {
+                const init = async () => {
+                    try {
+                        const success = await initializeFirebase();
+                        if (success) {
+                            setIsInitialized(true);
+                        } else {
+                            throw new Error("Failed to initialize Firebase. Please check your configuration or network.");
+                        }
+                    } catch (e) {
+                        if (retryCount < maxRetries) {
+                            setTimeout(() => setRetryCount(retryCount + 1), 2000);
+                        } else {
+                            setError(`Database initialization failed after ${maxRetries} attempts: ${e.message}. Please check your network or Firebase configuration.`);
+                        }
+                    }
+                };
+                init();
+            }, [retryCount]);
+
+            if (error) {
+                return (
+                    <div className="init-error">
+                        <h3>Application Initialization Error</h3>
+                        <p>{error}</p>
+                        <button className="btn btn-primary mt-3 me-2" onClick={() => { setRetryCount(0); setError(''); }}>
+                            Retry Initialization
+                        </button>
+                        <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()}>
+                            Refresh Page
+                        </button>
+                    </div>
+                );
+            }
+
+            if (!isInitialized) {
+                return (
+                    <div className="loading">
+                        <div className="spinner-border text-success" role="status">
+                            <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="mt-2">Initializing application... (Attempt {retryCount + 1}/{maxRetries})</p>
+                    </div>
+                );
+            }
+
+            return children;
         }
 
         // Login
@@ -266,6 +397,7 @@
                             <div className="container">
                                 <a className="navbar-brand" href="#" onClick={(e) => { e.preventDefault(); setView('home'); }}>Makongeni Green Nairobi Welfare</a>
                                 <div className="navbar-nav ms-auto">
+                                    <span className="nav-link me-3">Welcome, {user.name}</span>
                                     <span className="nav-link" style={{cursor: 'pointer'}} onClick={onLogout}>Logout</span>
                                 </div>
                             </div>
@@ -1032,10 +1164,10 @@
                         const memberSheet = workbook.Sheets['Members'];
                         if (memberSheet) {
                             const memberData = XLSX.utils.sheet_to_json(memberSheet);
-                            const batch = db.batch();
+                            const batch = firebase.writeBatch(db);
                             memberData.forEach(row => {
                                 if (row.Name && row.Role && row.Password && !users.find(u => u.name === row.Name)) {
-                                    const docRef = db.collection('users').doc();
+                                    const docRef = firebase.collection(db, 'users').doc();
                                     batch.set(docRef, {
                                         name: row.Name,
                                         role: row.Role,
@@ -1051,12 +1183,12 @@
                         const paymentSheet = workbook.Sheets['Payments'];
                         if (paymentSheet) {
                             const paymentData = XLSX.utils.sheet_to_json(paymentSheet);
-                            const batch = db.batch();
+                            const batch = firebase.writeBatch(db);
                             paymentData.forEach(row => {
                                 if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
-                                        const docRef = db.collection('payments').doc();
+                                        const docRef = firebase.collection(db, 'payments').doc();
                                         batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
@@ -1072,12 +1204,12 @@
                         const loanSheet = workbook.Sheets['Loans'];
                         if (loanSheet) {
                             const loanData = XLSX.utils.sheet_to_json(loanSheet);
-                            const batch = db.batch();
+                            const batch = firebase.writeBatch(db);
                             loanData.forEach(row => {
                                 if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = db.collection('loans').doc();
+                                        const docRef = firebase.collection(db, 'loans').doc();
                                         batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
@@ -1093,12 +1225,12 @@
                         const expenditureSheet = workbook.Sheets['Expenditures'];
                         if (expenditureSheet) {
                             const expenditureData = XLSX.utils.sheet_to_json(expenditureSheet);
-                            const batch = db.batch();
+                            const batch = firebase.writeBatch(db);
                             expenditureData.forEach(row => {
                                 if (row.Date && row.Amount) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = db.collection('expenditures').doc();
+                                        const docRef = firebase.collection(db, 'expenditures').doc();
                                         batch.set(docRef, {
                                             date: row.Date,
                                             amount: parseFloat(row.Amount)
@@ -1230,7 +1362,6 @@
                     setLoading(true);
                     setError('');
                     try {
-                        if (!db) throw new Error("Database not initialized");
                         const users = await loadData('users', []);
                         if (!users || users.length === 0) {
                             await addData('users', { name: 'admin', role: 'Admin', password: sha256('admin') });
@@ -1265,12 +1396,14 @@
             };
 
             if (error) return <div className="alert alert-danger">{error}</div>;
-            if (loading) return <div className="loading">Loading...</div>;
+            if (loading) return <div className="loading">Initializing application...</div>;
 
             return (
-                <ErrorBoundary>
-                    {user ? <Dashboard user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />}
-                </ErrorBoundary>
+                <DatabaseInitializer>
+                    <ErrorBoundary>
+                        {user ? <Dashboard user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />}
+                    </ErrorBoundary>
+                </DatabaseInitializer>
             );
         }
 
