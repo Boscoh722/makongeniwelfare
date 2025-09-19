@@ -51,11 +51,11 @@
     <!-- Firebase SDK (Modular Imports) -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
         // Make Firebase available globally
-        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch };
+        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
     </script>
 
     <script type="text/babel">
@@ -149,7 +149,7 @@
                 
                 const batch = firebase.writeBatch(db);
                 data.forEach(item => {
-                    const docRef = firebase.collection(db, collectionName).doc();
+                    const docRef = firebase.doc(firebase.collection(db, collectionName));
                     batch.set(docRef, item);
                 });
                 await batch.commit();
@@ -1167,7 +1167,7 @@
                             const batch = firebase.writeBatch(db);
                             memberData.forEach(row => {
                                 if (row.Name && row.Role && row.Password && !users.find(u => u.name === row.Name)) {
-                                    const docRef = firebase.collection(db, 'users').doc();
+                                    const docRef = firebase.doc(firebase.collection(db, 'users'));
                                     batch.set(docRef, {
                                         name: row.Name,
                                         role: row.Role,
@@ -1188,7 +1188,7 @@
                                 if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
-                                        const docRef = firebase.collection(db, 'payments').doc();
+                                        const docRef = firebase.doc(firebase.collection(db, 'payments'));
                                         batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
@@ -1209,7 +1209,7 @@
                                 if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.collection(db, 'loans').doc();
+                                        const docRef = firebase.doc(firebase.collection(db, 'loans'));
                                         batch.set(docRef, {
                                             member: row.Name,
                                             date: row.Date,
@@ -1230,7 +1230,7 @@
                                 if (row.Date && row.Amount) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.collection(db, 'expenditures').doc();
+                                        const docRef = firebase.doc(firebase.collection(db, 'expenditures'));
                                         batch.set(docRef, {
                                             date: row.Date,
                                             amount: parseFloat(row.Amount)
