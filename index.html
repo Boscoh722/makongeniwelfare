@@ -1499,6 +1499,11 @@
                 monthlyData[m].paid += (parseFloat(p.paidIn) || 0);
                 monthlyData[m].dates.push(p.date);
             });
+            const monthlyLoans = {};
+            userLoans.forEach(l => {
+                const m = getMonth(l.date);
+                monthlyLoans[m] = (monthlyLoans[m] || 0) + (parseFloat(l.amount) || 0);
+            });
             const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
@@ -1507,7 +1512,7 @@
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
-                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates };
+                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates, loan: monthlyLoans[mIndex] || 0 };
             });
             return (
                 <ErrorBoundary>
@@ -1527,7 +1532,7 @@
                                 <div className="table-responsive">
                                     <table className="table table-striped">
                                         <thead>
-                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Payment Dates</th></tr>
+                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Total Loans (KES)</th><th>Payment Dates</th></tr>
                                         </thead>
                                         <tbody>
                                             {months.map((m, i) => (
@@ -1535,6 +1540,7 @@
                                                     <td>{m.month}</td>
                                                     <td>{m.paid.toFixed(2)}</td>
                                                     <td>{m.fine}</td>
+                                                    <td>{m.loan.toFixed(2)}</td>
                                                     <td>{m.dates.join(', ')}</td>
                                                 </tr>
                                             ))}
