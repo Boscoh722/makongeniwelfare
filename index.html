@@ -6,6 +6,8 @@
     <title style="font-weight: bold;">Makongeni Green Nairobi Welfare</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Courier:wght@300;400;700&display=swap" rel="stylesheet">
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
     <style>
         body { font-family: 'Courier', sans-serif; font-size: 16px; background-color: #f8f9fa; }
         .navbar { background-color: #28a745 !important; }
@@ -31,6 +33,13 @@
             background-color: #f8d7da; 
             color: #721c24; 
         }
+        .batch-section { 
+            border: 1px solid #dee2e6; 
+            border-radius: 5px; 
+            padding: 15px; 
+            margin-bottom: 20px; 
+            background-color: #f8f9fa; 
+        }
     </style>
 </head>
 <body>
@@ -51,11 +60,11 @@
     <!-- Firebase SDK (Modular Imports) -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, initializeFirestore, CACHE_SIZE_UNLIMITED, persistentLocalCache, persistentMultipleTabManager } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
         // Make Firebase available globally
-        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
+        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, initializeFirestore, CACHE_SIZE_UNLIMITED, persistentLocalCache, persistentMultipleTabManager };
     </script>
 
     <script type="text/babel">
@@ -90,22 +99,14 @@
 
                     // Initialize Firebase app
                     const app = firebase.initializeApp(firebaseConfig);
-                    db = firebase.getFirestore(app);
                     
-                    // Check if persistence is supported
-                    try {
-                        await firebase.enableIndexedDbPersistence(db).catch(err => {
-                            console.warn("Offline persistence not supported:", err.code);
-                            if (err.code === 'failed-precondition') {
-                                console.warn("Multiple tabs open, persistence can only be enabled in one tab.");
-                            } else if (err.code === 'unimplemented') {
-                                console.warn("Browser does not support persistence.");
-                            }
-                        });
-                    } catch (persistenceError) {
-                        console.warn("Persistence setup failed, continuing without offline support:", persistenceError);
-                    }
-
+                    // Use new persistence API to avoid the deprecation warning
+                    db = firebase.initializeFirestore(app, {
+                        localCache: firebase.persistentLocalCache({
+                            tabManager: firebase.persistentMultipleTabManager()
+                        })
+                    });
+                    
                     isFirebaseInitialized = true;
                     console.log("Firebase initialized successfully");
                     return true;
@@ -171,6 +172,26 @@
                 return true;
             } catch (e) {
                 console.error(`Error adding to ${collectionName}:`, e);
+                throw e;
+            }
+        };
+
+        const addBatchData = async (collectionName, items) => {
+            try {
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                const batch = firebase.writeBatch(db);
+                items.forEach(item => {
+                    const docRef = firebase.doc(firebase.collection(db, collectionName));
+                    batch.set(docRef, item);
+                });
+                await batch.commit();
+                return true;
+            } catch (e) {
+                console.error(`Error adding batch to ${collectionName}:`, e);
                 throw e;
             }
         };
@@ -386,6 +407,7 @@
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
                     case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
                     case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded successfully')} /> : <AccessDenied />;
+                    case 'batchOperations': return user.role === 'Admin' ? <BatchOperations onSuccess={() => showAlert('Batch operations completed')} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
             };
@@ -428,6 +450,7 @@
                                 <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
                                 <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('uploadData')}>Upload Data</button></div>
                                 <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('download')}>Download All Data</button></div>
+                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('batchOperations')}>Batch Operations</button></div>
                             </>
                         )}
                         {user.role === 'Secretary' && (
@@ -458,6 +481,165 @@
 
         function AccessDenied() {
             return <div className="alert alert-danger">Access Denied</div>;
+        }
+
+        // Batch Operations Component
+        function BatchOperations({ onSuccess }) {
+            const [operationType, setOperationType] = useState('payments');
+            const [batchData, setBatchData] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+
+            const handleSubmit = async () => {
+                if (!batchData.trim()) {
+                    setError('Please enter data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+                setSuccess('');
+
+                try {
+                    const lines = batchData.trim().split('\n');
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    const data = lines.slice(1).map(line => {
+                        const values = line.split(',').map(v => v.trim());
+                        const item = {};
+                        headers.forEach((header, i) => {
+                            item[header] = values[i] || '';
+                        });
+                        return item;
+                    });
+
+                    if (operationType === 'payments') {
+                        // Validate payments data
+                        const payments = data.map(item => ({
+                            member: item.member || item.Member,
+                            date: item.date || item.Date || new Date().toISOString().split('T')[0],
+                            paidIn: parseFloat(item.paidIn || item['Paid In'] || 0)
+                        }));
+
+                        await addBatchData('payments', payments);
+                        setSuccess(`Successfully added ${payments.length} payments`);
+                    } else if (operationType === 'loans') {
+                        // Validate loans data
+                        const loans = data.map(item => ({
+                            member: item.member || item.Member,
+                            date: item.date || item.Date || new Date().toISOString().split('T')[0],
+                            amount: parseFloat(item.amount || item.Amount || 0)
+                        }));
+
+                        await addBatchData('loans', loans);
+                        setSuccess(`Successfully added ${loans.length} loans`);
+                    }
+
+                    setBatchData('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error processing batch data: ' + e.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleTemplateDownload = () => {
+                let template = '';
+                
+                if (operationType === 'payments') {
+                    template = 'member,date,paidIn\nJohn Doe,2024-01-15,500\nJane Smith,2024-01-15,300';
+                } else if (operationType === 'loans') {
+                    template = 'member,date,amount\nJohn Doe,2024-01-15,1000\nJane Smith,2024-01-15,2000';
+                }
+                
+                const blob = new Blob([template], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${operationType}_template.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Batch Operations</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {success && <div className="alert alert-success alert-dismissible">{success}</div>}
+                        {loading && <div className="loading">Processing...</div>}
+                        
+                        <div className="row justify-content-center">
+                            <div className="col-md-8">
+                                <div className="mb-3">
+                                    <label className="form-label">Operation Type</label>
+                                    <select 
+                                        className="form-select" 
+                                        value={operationType} 
+                                        onChange={e => setOperationType(e.target.value)}
+                                        disabled={loading}
+                                    >
+                                        <option value="payments">Batch Add Payments</option>
+                                        <option value="loans">Batch Add Loans</option>
+                                    </select>
+                                </div>
+
+                                <div className="batch-section">
+                                    <h5>Instructions</h5>
+                                    <p>
+                                        Enter data in CSV format with a header row. The first line should contain column names.
+                                        <br/>
+                                        For payments: member, date (YYYY-MM-DD), paidIn (amount)
+                                        <br/>
+                                        For loans: member, date (YYYY-MM-DD), amount
+                                    </p>
+                                    
+                                    <div className="mb-3">
+                                        <button 
+                                            className="btn btn-outline-secondary btn-sm" 
+                                            onClick={handleTemplateDownload}
+                                            disabled={loading}
+                                        >
+                                            Download Template
+                                        </button>
+                                    </div>
+
+                                    <div className="mb-3">
+                                        <label className="form-label">Batch Data (CSV format)</label>
+                                        <textarea 
+                                            className="form-control" 
+                                            rows="10" 
+                                            value={batchData} 
+                                            onChange={e => setBatchData(e.target.value)}
+                                            placeholder="Enter data in CSV format with header row"
+                                            disabled={loading}
+                                        />
+                                    </div>
+
+                                    <button 
+                                        className="btn btn-success" 
+                                        onClick={handleSubmit}
+                                        disabled={loading || !batchData.trim()}
+                                    >
+                                        Process Batch Data
+                                    </button>
+                                    <button 
+                                        className="btn btn-secondary ms-2" 
+                                        onClick={() => window.location.reload()}
+                                        disabled={loading}
+                                    >
+                                        Back to Dashboard
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
         }
 
         // Add Member
@@ -1186,6 +1368,7 @@
                                 <option value={2024}>2024</option>
                                 <option value={2025}>2025</option>
                                 <option value={2026}>2026</option>
+                                <option value={2027}>2027</option>
                             </select>
                         </div>
                         <h2>All Data for {year}</h2>
