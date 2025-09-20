@@ -47,7 +47,7 @@
     <!-- Bootstrap JS & sha256 -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.10.1/src/sha256.min.js"></script>
-   
+  
     <!-- XLSX for Excel file handling -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Firebase SDK (Modular Imports) -->
@@ -111,7 +111,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-               
+              
                 const collRef = firebase.collection(db, collectionName);
                 const snapshot = await firebase.getDocs(collRef);
                 return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -126,7 +126,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-               
+              
                 const batch = firebase.writeBatch(db);
                 data.forEach(item => {
                     const docRef = firebase.doc(firebase.collection(db, collectionName));
@@ -145,7 +145,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-               
+              
                 await firebase.addDoc(firebase.collection(db, collectionName), item);
                 return true;
             } catch (e) {
@@ -159,7 +159,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-               
+              
                 const collRef = firebase.collection(db, collectionName);
                 const q = firebase.query(collRef, firebase.where(queryField, '==', queryValue));
                 const snapshot = await firebase.getDocs(q);
@@ -178,7 +178,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-               
+              
                 const batch = firebase.writeBatch(db);
                 ids.forEach(id => {
                     const docRef = firebase.doc(db, collectionName, id);
@@ -201,20 +201,20 @@
                 const loans = await loadData('loans', []);
                 const expenditures = await loadData('expenditures', []);
                 const members = await loadData('users', []);
-               
+              
                 const yearPayments = payments.filter(p => getYear(p.date) === year);
                 const monthlySums = {};
-               
+              
                 yearPayments.forEach(p => {
                     const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
                     monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
                 });
-               
+              
                 const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
                 const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalInterest = totalLoans * 0.1;
                 const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-               
+              
                 const groupTotal = totalInterest + totalFines - totalExp;
                 return members.length ? groupTotal / members.length : 0;
             } catch (e) {
@@ -1705,6 +1705,7 @@
                 totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
                 groupShare: share
             };
+            const currentBalance = yearlyTotals.totalPaid - yearlyTotals.totalLoans - yearlyTotals.totalExpenditures;
             return (
                 <ErrorBoundary>
                     <div>
@@ -1728,6 +1729,7 @@
                                         <p><strong>Total Interest from Loans:</strong> {yearlyTotals.totalInterest.toFixed(2)} KES</p>
                                         <p><strong>Total Expenditures:</strong> {yearlyTotals.totalExpenditures.toFixed(2)} KES</p>
                                         <p><strong>Group Share per Member:</strong> {yearlyTotals.groupShare.toFixed(2)} KES</p>
+                                        <p><strong>Current Available Balance:</strong> <span className={currentBalance >= 0 ? 'positive' : 'negative'}>{currentBalance.toFixed(2)} KES</span></p>
                                     </div>
                                 </div>
                             </div>
