@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title style="font-weight: bold;">Makongeni Green Nairobi Welfare</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
-    <link href="https://fonts.googleapis.com/css2?family=Courier:wght@300;400;700&display=swap" rel="stylesheet">
-    <!-- Favicon -->
+    <title>Makongeni Green Nairobi Welfare</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Courier:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Courier', sans-serif; font-size: 16px; background-color: #f8f9fa; }
         .navbar { background-color: #28a745 !important; }
@@ -33,13 +33,9 @@
             background-color: #f8d7da; 
             color: #721c24; 
         }
-        .batch-section { 
-            border: 1px solid #dee2e6; 
-            border-radius: 5px; 
-            padding: 15px; 
-            margin-bottom: 20px; 
-            background-color: #f8f9fa; 
-        }
+        .dashboard-card { cursor: pointer; transition: transform 0.2s; }
+        .dashboard-card:hover { transform: scale(1.05); }
+        .dashboard-icon { color: #28a745; }
     </style>
 </head>
 <body>
@@ -60,11 +56,11 @@
     <!-- Firebase SDK (Modular Imports) -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-        import { getFirestore, enableIndexedDbPersistence, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, initializeFirestore, CACHE_SIZE_UNLIMITED, persistentLocalCache, persistentMultipleTabManager } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
         // Make Firebase available globally
-        window.firebase = { initializeApp, getFirestore, enableIndexedDbPersistence, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, initializeFirestore, CACHE_SIZE_UNLIMITED, persistentLocalCache, persistentMultipleTabManager };
+        window.firebase = { initializeApp, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
     </script>
 
     <script type="text/babel">
@@ -99,14 +95,12 @@
 
                     // Initialize Firebase app
                     const app = firebase.initializeApp(firebaseConfig);
-                    
-                    // Use new persistence API to avoid the deprecation warning
                     db = firebase.initializeFirestore(app, {
                         localCache: firebase.persistentLocalCache({
                             tabManager: firebase.persistentMultipleTabManager()
                         })
                     });
-                    
+
                     isFirebaseInitialized = true;
                     console.log("Firebase initialized successfully");
                     return true;
@@ -176,26 +170,6 @@
             }
         };
 
-        const addBatchData = async (collectionName, items) => {
-            try {
-                if (!db) {
-                    const initialized = await initializeFirebase();
-                    if (!initialized) throw new Error("Database not initialized");
-                }
-                
-                const batch = firebase.writeBatch(db);
-                items.forEach(item => {
-                    const docRef = firebase.doc(firebase.collection(db, collectionName));
-                    batch.set(docRef, item);
-                });
-                await batch.commit();
-                return true;
-            } catch (e) {
-                console.error(`Error adding batch to ${collectionName}:`, e);
-                throw e;
-            }
-        };
-
         const deleteData = async (collectionName, queryField, queryValue) => {
             try {
                 if (!db) {
@@ -208,6 +182,26 @@
                 const snapshot = await firebase.getDocs(q);
                 const batch = firebase.writeBatch(db);
                 snapshot.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                return true;
+            } catch (e) {
+                console.error(`Error deleting from ${collectionName}:`, e);
+                throw e;
+            }
+        };
+
+        const deleteByIds = async (collectionName, ids) => {
+            try {
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                
+                const batch = firebase.writeBatch(db);
+                ids.forEach(id => {
+                    const docRef = firebase.doc(db, collectionName, id);
+                    batch.delete(docRef);
+                });
                 await batch.commit();
                 return true;
             } catch (e) {
@@ -240,8 +234,10 @@
                 const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalInterest = totalLoans * 0.1;
                 const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+                const totalPaid = yearPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
                 
-                return members.length ? (totalInterest + totalFines - totalExp) / members.length : 0;
+                const groupTotal = totalPaid + totalInterest - totalExp;
+                return members.length ? groupTotal / members.length : 0;
             } catch (e) {
                 console.error("Error computing group share:", e);
                 return 0;
@@ -398,16 +394,19 @@
                 const viewProps = { year, setYear };
                 switch (view) {
                     case 'addMember': return user.role === 'Admin' ? <AddMember onSuccess={() => showAlert('Member added')} /> : <AccessDenied />;
+                    case 'batchAddMembers': return user.role === 'Admin' ? <BatchAddMembers onSuccess={() => showAlert('Members added')} /> : <AccessDenied />;
                     case 'viewMembers': return user.role === 'Admin' ? <ViewMembers onRemoveSuccess={() => showAlert('Member(s) removed')} /> : <AccessDenied />;
                     case 'addPayment': return ['Admin', 'Secretary'].includes(user.role) ? <AddPayment onSuccess={() => showAlert('Payment added')} /> : <AccessDenied />;
+                    case 'batchAddPayments': return ['Admin', 'Secretary'].includes(user.role) ? <BatchAddPayments onSuccess={() => showAlert('Payments added')} /> : <AccessDenied />;
                     case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
+                    case 'batchAddLoans': return ['Admin', 'Secretary'].includes(user.role) ? <BatchAddLoans onSuccess={() => showAlert('Loans added')} /> : <AccessDenied />;
                     case 'addExpenditure': return ['Admin', 'Secretary'].includes(user.role) ? <AddExpenditure onSuccess={() => showAlert('Expenditure added')} /> : <AccessDenied />;
-                    case 'viewAll': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
-                    case 'viewPersonal': return user.role === 'Member' ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
+                    case 'viewAll': return ['Admin', 'Secretary', 'Chairman', 'Treasurer', 'Member'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
+                    case 'viewPersonal': return true ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
                     case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
                     case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded successfully')} /> : <AccessDenied />;
-                    case 'batchOperations': return user.role === 'Admin' ? <BatchOperations onSuccess={() => showAlert('Batch operations completed')} /> : <AccessDenied />;
+                    case 'manageTransactions': return user.role === 'Admin' ? <ManageTransactions year={year} onDeleteSuccess={() => showAlert('Transactions deleted')} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
             };
@@ -437,42 +436,270 @@
         function Home({ user, setView }) {
             return (
                 <div>
-                    <h1 className="mb-4">Welcome, {user.name} ({user.role})</h1>
+                    <h1 className="mb-4 text-center">Welcome, {user.name} ({user.role})</h1>
                     <div className="row">
                         {user.role === 'Admin' && (
                             <>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addMember')}>Add Member</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewMembers')}>View Members</button></div>
-                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
-                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('uploadData')}>Upload Data</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('download')}>Download All Data</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('batchOperations')}>Batch Operations</button></div>
+                                <h4 className="mb-3">Member Management</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addMember')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person-plus dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Member</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('batchAddMembers')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Batch Add Members</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewMembers')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person-lines-fill dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">View Members</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Financial Operations</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addPayment')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-currency-exchange dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Payment</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('batchAddPayments')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-receipt dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Batch Add Payments</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addLoan')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-bank dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Loan</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('batchAddLoans')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-credit-card dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Batch Add Loans</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addExpenditure')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-wallet dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Expenditure</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('manageTransactions')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-trash dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Manage Transactions</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Personal & Group Data</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Personal Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Group Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Views & Reports</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Monthly Summary</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('uploadData')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-upload dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Upload Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('download')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-download dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Download All Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
                             </>
                         )}
                         {user.role === 'Secretary' && (
                             <>
-                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addPayment')}>Add Payment</button></div>
-                                <div className="col-md-4 col-sm-6 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addLoan')}>Add Loan</button></div>
-                                <div className="col-md-4 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('addExpenditure')}>Add Expenditure</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
+                                <h4 className="mb-3">Financial Operations</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addPayment')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-currency-exchange dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Payment</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('batchAddPayments')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-receipt dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Batch Add Payments</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addLoan')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-bank dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Loan</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('batchAddLoans')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-credit-card dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Batch Add Loans</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('addExpenditure')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-wallet dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Add Expenditure</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Personal & Group Data</h4>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Personal Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Group Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Views & Reports</h4>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Monthly Summary</h5>
+                                        </div>
+                                    </div>
+                                </div>
                             </>
                         )}
                         {user.role === 'Chairman' && (
                             <>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
-                                <div className="col-md-6 col-sm-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('monthlySummary')}>Monthly Summary</button></div>
+                                <h4 className="mb-3">Personal & Group Data</h4>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Personal Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Group Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <h4 className="mb-3 mt-4">Views & Reports</h4>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Monthly Summary</h5>
+                                        </div>
+                                    </div>
+                                </div>
                             </>
                         )}
                         {user.role === 'Treasurer' && (
-                            <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewAll')}>View All Data</button></div>
+                            <>
+                                <h4 className="mb-3">Personal & Group Data</h4>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Personal Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Group Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
                         )}
                         {user.role === 'Member' && (
-                            <div className="col-12 mb-3"><button className="btn btn-success w-100" onClick={() => setView('viewPersonal')}>View Personal Data</button></div>
+                            <>
+                                <h4 className="mb-3">Personal & Group Data</h4>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-person dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Personal Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-6 mb-3">
+                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
+                                        <div className="card-body text-center">
+                                            <i className="bi bi-people dashboard-icon fs-1"></i>
+                                            <h5 className="card-title">Group Financial Data</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>
@@ -481,165 +708,6 @@
 
         function AccessDenied() {
             return <div className="alert alert-danger">Access Denied</div>;
-        }
-
-        // Batch Operations Component
-        function BatchOperations({ onSuccess }) {
-            const [operationType, setOperationType] = useState('payments');
-            const [batchData, setBatchData] = useState('');
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
-            const [success, setSuccess] = useState('');
-
-            const handleSubmit = async () => {
-                if (!batchData.trim()) {
-                    setError('Please enter data');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
-
-                setLoading(true);
-                setError('');
-                setSuccess('');
-
-                try {
-                    const lines = batchData.trim().split('\n');
-                    const headers = lines[0].split(',').map(h => h.trim());
-                    const data = lines.slice(1).map(line => {
-                        const values = line.split(',').map(v => v.trim());
-                        const item = {};
-                        headers.forEach((header, i) => {
-                            item[header] = values[i] || '';
-                        });
-                        return item;
-                    });
-
-                    if (operationType === 'payments') {
-                        // Validate payments data
-                        const payments = data.map(item => ({
-                            member: item.member || item.Member,
-                            date: item.date || item.Date || new Date().toISOString().split('T')[0],
-                            paidIn: parseFloat(item.paidIn || item['Paid In'] || 0)
-                        }));
-
-                        await addBatchData('payments', payments);
-                        setSuccess(`Successfully added ${payments.length} payments`);
-                    } else if (operationType === 'loans') {
-                        // Validate loans data
-                        const loans = data.map(item => ({
-                            member: item.member || item.Member,
-                            date: item.date || item.Date || new Date().toISOString().split('T')[0],
-                            amount: parseFloat(item.amount || item.Amount || 0)
-                        }));
-
-                        await addBatchData('loans', loans);
-                        setSuccess(`Successfully added ${loans.length} loans`);
-                    }
-
-                    setBatchData('');
-                    onSuccess();
-                } catch (e) {
-                    setError('Error processing batch data: ' + e.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            const handleTemplateDownload = () => {
-                let template = '';
-                
-                if (operationType === 'payments') {
-                    template = 'member,date,paidIn\nJohn Doe,2024-01-15,500\nJane Smith,2024-01-15,300';
-                } else if (operationType === 'loans') {
-                    template = 'member,date,amount\nJohn Doe,2024-01-15,1000\nJane Smith,2024-01-15,2000';
-                }
-                
-                const blob = new Blob([template], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${operationType}_template.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-            };
-
-            return (
-                <ErrorBoundary>
-                    <div>
-                        <h2>Batch Operations</h2>
-                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
-                        {success && <div className="alert alert-success alert-dismissible">{success}</div>}
-                        {loading && <div className="loading">Processing...</div>}
-                        
-                        <div className="row justify-content-center">
-                            <div className="col-md-8">
-                                <div className="mb-3">
-                                    <label className="form-label">Operation Type</label>
-                                    <select 
-                                        className="form-select" 
-                                        value={operationType} 
-                                        onChange={e => setOperationType(e.target.value)}
-                                        disabled={loading}
-                                    >
-                                        <option value="payments">Batch Add Payments</option>
-                                        <option value="loans">Batch Add Loans</option>
-                                    </select>
-                                </div>
-
-                                <div className="batch-section">
-                                    <h5>Instructions</h5>
-                                    <p>
-                                        Enter data in CSV format with a header row. The first line should contain column names.
-                                        <br/>
-                                        For payments: member, date (YYYY-MM-DD), paidIn (amount)
-                                        <br/>
-                                        For loans: member, date (YYYY-MM-DD), amount
-                                    </p>
-                                    
-                                    <div className="mb-3">
-                                        <button 
-                                            className="btn btn-outline-secondary btn-sm" 
-                                            onClick={handleTemplateDownload}
-                                            disabled={loading}
-                                        >
-                                            Download Template
-                                        </button>
-                                    </div>
-
-                                    <div className="mb-3">
-                                        <label className="form-label">Batch Data (CSV format)</label>
-                                        <textarea 
-                                            className="form-control" 
-                                            rows="10" 
-                                            value={batchData} 
-                                            onChange={e => setBatchData(e.target.value)}
-                                            placeholder="Enter data in CSV format with header row"
-                                            disabled={loading}
-                                        />
-                                    </div>
-
-                                    <button 
-                                        className="btn btn-success" 
-                                        onClick={handleSubmit}
-                                        disabled={loading || !batchData.trim()}
-                                    >
-                                        Process Batch Data
-                                    </button>
-                                    <button 
-                                        className="btn btn-secondary ms-2" 
-                                        onClick={() => window.location.reload()}
-                                        disabled={loading}
-                                    >
-                                        Back to Dashboard
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </ErrorBoundary>
-            );
         }
 
         // Add Member
@@ -704,6 +772,254 @@
                                     <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required disabled={loading} />
                                 </div>
                                 <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Member</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Batch Add Members
+        function BatchAddMembers({ onSuccess }) {
+            const [input, setInput] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async () => {
+                if (!input.trim()) {
+                    setError('Please enter member data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                const lines = input.trim().split('\n').filter(line => line.trim());
+                if (lines.length === 0) {
+                    setError('No valid lines found');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (!confirm(`Confirm adding ${lines.length} members?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const batch = firebase.writeBatch(db);
+                    const newMembers = [];
+                    for (const line of lines) {
+                        const [name, role = 'Member', password] = line.split(',').map(s => s.trim());
+                        if (!name || !password) {
+                            throw new Error(`Invalid format in line: ${line}`);
+                        }
+                        if (users.find(u => u.name === name) || newMembers.find(m => m.name === name)) {
+                            throw new Error(`Duplicate name: ${name}`);
+                        }
+                        if (!['Admin', 'Secretary', 'Chairman', 'Treasurer', 'Member'].includes(role)) {
+                            throw new Error(`Invalid role for ${name}: ${role}`);
+                        }
+                        const docRef = firebase.doc(firebase.collection(db, 'users'));
+                        batch.set(docRef, { name, role, password: sha256(password) });
+                        newMembers.push({ name });
+                    }
+                    await batch.commit();
+                    setInput('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding members: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Batch Add Members</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Members Data (one per line: name,role,password)</label>
+                                    <textarea 
+                                        className="form-control" 
+                                        rows="10"
+                                        value={input} 
+                                        onChange={e => setInput(e.target.value)} 
+                                        disabled={loading} 
+                                        placeholder="Example:\nJohn,Member,johnpass\nJane,Secretary,janepass"
+                                    />
+                                </div>
+                                <p className="text-muted">Role is optional, defaults to 'Member'. Valid roles: Admin, Secretary, Chairman, Treasurer, Member.</p>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Members</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Batch Add Payments
+        function BatchAddPayments({ onSuccess }) {
+            const [input, setInput] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async () => {
+                if (!input.trim()) {
+                    setError('Please enter payment data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                const lines = input.trim().split('\n').filter(line => line.trim());
+                if (lines.length === 0) {
+                    setError('No valid lines found');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (!confirm(`Confirm adding ${lines.length} payments?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const batch = firebase.writeBatch(db);
+                    for (const line of lines) {
+                        const parts = line.split(',').map(s => s.trim());
+                        let member, date, paidIn;
+                        if (parts.length === 3) {
+                            [member, date, paidIn] = parts;
+                        } else if (parts.length === 2) {
+                            [member, paidIn] = parts;
+                            date = new Date().toISOString().split('T')[0];
+                        } else {
+                            throw new Error(`Invalid format in line: ${line}`);
+                        }
+                        if (!member || !paidIn || isNaN(parseFloat(paidIn))) {
+                            throw new Error(`Invalid data in line: ${line}`);
+                        }
+                        if (!users.find(u => u.name === member)) {
+                            throw new Error(`Member not found: ${member}`);
+                        }
+                        const docRef = firebase.doc(firebase.collection(db, 'payments'));
+                        batch.set(docRef, { member, date, paidIn: parseFloat(paidIn) });
+                    }
+                    await batch.commit();
+                    setInput('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding payments: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Batch Add Payments</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Payments Data (one per line: member,date,paidIn or member,paidIn - date defaults to today)</label>
+                                    <textarea 
+                                        className="form-control" 
+                                        rows="10"
+                                        value={input} 
+                                        onChange={e => setInput(e.target.value)} 
+                                        disabled={loading} 
+                                        placeholder="Example:\nJohn,2025-09-20,300\nJane,500\nAlice,2025-10-01,250"
+                                    />
+                                </div>
+                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today's date. Multiple lines for batch upload.</p>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Payments</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // Batch Add Loans
+        function BatchAddLoans({ onSuccess }) {
+            const [input, setInput] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async () => {
+                if (!input.trim()) {
+                    setError('Please enter loan data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                const lines = input.trim().split('\n').filter(line => line.trim());
+                if (lines.length === 0) {
+                    setError('No valid lines found');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (!confirm(`Confirm adding ${lines.length} loans?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const batch = firebase.writeBatch(db);
+                    for (const line of lines) {
+                        const parts = line.split(',').map(s => s.trim());
+                        let member, date, amount;
+                        if (parts.length === 3) {
+                            [member, date, amount] = parts;
+                        } else if (parts.length === 2) {
+                            [member, amount] = parts;
+                            date = new Date().toISOString().split('T')[0];
+                        } else {
+                            throw new Error(`Invalid format in line: ${line}`);
+                        }
+                        if (!member || !amount || isNaN(parseFloat(amount))) {
+                            throw new Error(`Invalid data in line: ${line}`);
+                        }
+                        if (!users.find(u => u.name === member)) {
+                            throw new Error(`Member not found: ${member}`);
+                        }
+                        const docRef = firebase.doc(firebase.collection(db, 'loans'));
+                        batch.set(docRef, { member, date, amount: parseFloat(amount) });
+                    }
+                    await batch.commit();
+                    setInput('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding loans: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Batch Add Loans</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Loans Data (one per line: member,date,amount or member,amount - date defaults to today)</label>
+                                    <textarea 
+                                        className="form-control" 
+                                        rows="10"
+                                        value={input} 
+                                        onChange={e => setInput(e.target.value)} 
+                                        disabled={loading} 
+                                        placeholder="Example:\nJohn,2025-09-20,1000\nJane,500\nAlice,2025-10-01,250"
+                                    />
+                                </div>
+                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today's date. Multiple lines for batch upload.</p>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Loans</button>
                                 <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
                             </div>
                         </div>
@@ -1086,6 +1402,142 @@
             );
         }
 
+        // Manage Transactions
+        function ManageTransactions({ year, onDeleteSuccess }) {
+            const [payments, setPayments] = useState([]);
+            const [loans, setLoans] = useState([]);
+            const [expenditures, setExpenditures] = useState([]);
+            const [selectedPayments, setSelectedPayments] = useState([]);
+            const [selectedLoans, setSelectedLoans] = useState([]);
+            const [selectedExpenditures, setSelectedExpenditures] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                setLoading(true);
+                Promise.all([
+                    loadData('payments', []).then(data => setPayments(data.filter(p => getYear(p.date) === year))),
+                    loadData('loans', []).then(data => setLoans(data.filter(l => getYear(l.date) === year))),
+                    loadData('expenditures', []).then(data => setExpenditures(data.filter(e => getYear(e.date) === year)))
+                ])
+                    .then(() => setLoading(false))
+                    .catch(e => {
+                        setError('Error loading transactions: ' + e.message);
+                        setLoading(false);
+                        setTimeout(() => setError(''), 3000);
+                    });
+            }, [year]);
+
+            const handleSelect = (type, id) => {
+                const setter = type === 'payments' ? setSelectedPayments : type === 'loans' ? setSelectedLoans : setSelectedExpenditures;
+                setter(prev =>
+                    prev.includes(id)
+                        ? prev.filter(u => u !== id)
+                        : [...prev, id]
+                );
+            };
+
+            const handleDelete = async (type, selected) => {
+                if (selected.length === 0) {
+                    setError('Please select at least one to delete');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (!confirm(`Are you sure you want to delete ${selected.length} ${type}?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    await deleteByIds(type, selected);
+                    if (type === 'payments') {
+                        setPayments(payments.filter(p => !selected.includes(p.id)));
+                        setSelectedPayments([]);
+                    } else if (type === 'loans') {
+                        setLoans(loans.filter(l => !selected.includes(l.id)));
+                        setSelectedLoans([]);
+                    } else {
+                        setExpenditures(expenditures.filter(e => !selected.includes(e.id)));
+                        setSelectedExpenditures([]);
+                    }
+                    onDeleteSuccess();
+                } catch (e) {
+                    setError('Error deleting: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            if (loading) return <div className="loading">Loading...</div>;
+            if (error) return <div className="alert alert-danger">{error}</div>;
+
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Manage Transactions for {year}</h2>
+                        <h4>Payments</h4>
+                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('payments', selectedPayments)} disabled={selectedPayments.length === 0}>Delete Selected Payments ({selectedPayments.length})</button>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Select</th><th>Member</th><th>Date</th><th>Paid In</th></tr>
+                                </thead>
+                                <tbody>
+                                    {payments.map(p => (
+                                        <tr key={p.id}>
+                                            <td><input type="checkbox" checked={selectedPayments.includes(p.id)} onChange={() => handleSelect('payments', p.id)} /></td>
+                                            <td>{p.member}</td>
+                                            <td>{p.date}</td>
+                                            <td>{p.paidIn}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h4>Loans</h4>
+                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('loans', selectedLoans)} disabled={selectedLoans.length === 0}>Delete Selected Loans ({selectedLoans.length})</button>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Select</th><th>Member</th><th>Date</th><th>Amount</th></tr>
+                                </thead>
+                                <tbody>
+                                    {loans.map(l => (
+                                        <tr key={l.id}>
+                                            <td><input type="checkbox" checked={selectedLoans.includes(l.id)} onChange={() => handleSelect('loans', l.id)} /></td>
+                                            <td>{l.member}</td>
+                                            <td>{l.date}</td>
+                                            <td>{l.amount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h4>Expenditures</h4>
+                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('expenditures', selectedExpenditures)} disabled={selectedExpenditures.length === 0}>Delete Selected Expenditures ({selectedExpenditures.length})</button>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Select</th><th>Date</th><th>Amount</th></tr>
+                                </thead>
+                                <tbody>
+                                    {expenditures.map(e => (
+                                        <tr key={e.id}>
+                                            <td><input type="checkbox" checked={selectedExpenditures.includes(e.id)} onChange={() => handleSelect('expenditures', e.id)} /></td>
+                                            <td>{e.date}</td>
+                                            <td>{e.amount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
         // View Personal Data
         function ViewPersonal({ userId, year, setYear }) {
             const [allPayments, setAllPayments] = useState([]);
@@ -1129,7 +1581,8 @@
             const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-            const net = totalPaid - totalFines + share - totalLoan;
+            const totalLoanInterest = totalLoan * 0.1;
+            const net = totalPaid - totalFines + share - totalLoan - totalLoanInterest;
 
             const monthlySums = {};
             allPayments.forEach(p => {
@@ -1140,6 +1593,7 @@
             const groupTotalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const groupTotalExp = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
             const groupTotalPaid = allPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
+            const groupTotalInterest = groupTotalLoans * 0.1;
 
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
@@ -1167,6 +1621,7 @@
                                         <p><strong>Total Paid In:</strong> {groupTotalPaid.toFixed(2)} KES</p>
                                         <p><strong>Total Fines:</strong> {groupTotalFines} KES</p>
                                         <p><strong>Total Loans:</strong> {groupTotalLoans.toFixed(2)} KES</p>
+                                        <p><strong>Total Interest from Loans:</strong> {groupTotalInterest.toFixed(2)} KES</p>
                                         <p><strong>Total Expenditures:</strong> {groupTotalExp.toFixed(2)} KES</p>
                                         <p><strong>Net Share per Person:</strong> {share.toFixed(2)} KES</p>
                                     </div>
@@ -1199,8 +1654,9 @@
                                     <div className="card-body">
                                         <h5 className="card-title">Yearly Summary</h5>
                                         <p><strong>Total Paid:</strong> {totalPaid.toFixed(2)} KES</p>
-                                        <p><strong>Total Fines:</strong> {totalFines} KES</p>
+                                        <p><strong>Total Fines (deducted):</strong> {totalFines} KES</p>
                                         <p><strong>Total Loans:</strong> {totalLoan.toFixed(2)} KES</p>
+                                        <p><strong>Total Loan Interest (deducted):</strong> {totalLoanInterest.toFixed(2)} KES</p>
                                         <p><span className={net >= 0 ? 'positive' : 'negative'}><strong>Net Amount:</strong> {net.toFixed(2)} KES</span></p>
                                     </div>
                                 </div>
@@ -1341,8 +1797,9 @@
                 const totalFines = Object.values(monthlyData).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
                 const userLoans = loans.filter(l => l.member === u.name && getYear(l.date) === year);
                 const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-                const net = totalPaid - totalFines + share - totalLoan;
-                return { name: u.name, totalPaid, totalFines, totalLoan, net };
+                const totalLoanInterest = totalLoan * 0.1;
+                const net = totalPaid - totalFines + share - totalLoan - totalLoanInterest;
+                return { name: u.name, totalPaid, totalFines, totalLoan, totalLoanInterest, net };
             });
 
             const yearlyTotals = {
@@ -1355,6 +1812,7 @@
                     }, {})
                 ).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0),
                 totalLoans: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
+                totalInterest: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0) * 0.1,
                 totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
                 groupShare: share
             };
@@ -1368,10 +1826,9 @@
                                 <option value={2024}>2024</option>
                                 <option value={2025}>2025</option>
                                 <option value={2026}>2026</option>
-                                <option value={2027}>2027</option>
                             </select>
                         </div>
-                        <h2>All Data for {year}</h2>
+                        <h2>Group Financial Data for {year}</h2>
                         <div className="row mb-4">
                             <div className="col-md-4">
                                 <div className="card">
@@ -1380,6 +1837,7 @@
                                         <p><strong>Total Paid:</strong> {yearlyTotals.totalPaid.toFixed(2)} KES</p>
                                         <p><strong>Total Fines:</strong> {yearlyTotals.totalFines.toFixed(2)} KES</p>
                                         <p><strong>Total Loans:</strong> {yearlyTotals.totalLoans.toFixed(2)} KES</p>
+                                        <p><strong>Total Interest from Loans:</strong> {yearlyTotals.totalInterest.toFixed(2)} KES</p>
                                         <p><strong>Total Expenditures:</strong> {yearlyTotals.totalExpenditures.toFixed(2)} KES</p>
                                         <p><strong>Group Share per Member:</strong> {yearlyTotals.groupShare.toFixed(2)} KES</p>
                                     </div>
@@ -1389,7 +1847,7 @@
                         <div className="table-responsive">
                             <table className="table table-striped">
                                 <thead>
-                                    <tr><th>Name</th><th>Total Paid (KES)</th><th>Total Fines (KES)</th><th>Total Loans (KES)</th><th>Net Amount (KES)</th></tr>
+                                    <tr><th>Name</th><th>Total Paid (KES)</th><th>Total Fines (deducted) (KES)</th><th>Total Loans (KES)</th><th>Total Loan Interest (deducted) (KES)</th><th>Net Amount (KES)</th></tr>
                                 </thead>
                                 <tbody>
                                     {data.map(d => (
@@ -1398,6 +1856,7 @@
                                             <td>{d.totalPaid.toFixed(2)}</td>
                                             <td>{d.totalFines}</td>
                                             <td>{d.totalLoan.toFixed(2)}</td>
+                                            <td>{d.totalLoanInterest.toFixed(2)}</td>
                                             <td className={d.net >= 0 ? 'positive' : 'negative'}>{d.net.toFixed(2)}</td>
                                         </tr>
                                     ))}
@@ -1437,14 +1896,14 @@
                         let users = await loadData('users', []);
 
                         const requiredSheets = ['Members', 'Payments', 'Loans', 'Expenditures'];
-                        const availableSheets = Object.keys(workbook.Sheets);
+                        const availableSheets = workbook.SheetNames;
                         const missingSheets = requiredSheets.filter(sheet => !availableSheets.includes(sheet));
                         if (missingSheets.length > 0) {
                             console.warn(`Missing sheets: ${missingSheets.join(', ')}. Processing available sheets.`);
                         }
 
                         // Process Members
-                        if (workbook.Sheets['Members']) {
+                        if (availableSheets.includes('Members')) {
                             const memberData = XLSX.utils.sheet_to_json(workbook.Sheets['Members']);
                             const batch = firebase.writeBatch(db);
                             memberData.forEach(row => {
@@ -1465,18 +1924,18 @@
                         }
 
                         // Process Payments
-                        if (workbook.Sheets['Payments']) {
+                        if (availableSheets.includes('Payments')) {
                             const paymentData = XLSX.utils.sheet_to_json(workbook.Sheets['Payments']);
                             const batch = firebase.writeBatch(db);
                             paymentData.forEach(row => {
-                                if (row.Name && row.Date && row['Paid In'] && users.some(u => u.name === row.Name)) {
+                                if (row.Member && row.Date && row.PaidIn && users.some(u => u.name === row.Member)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row['Paid In']))) {
+                                    if (dateMatch && !isNaN(parseFloat(row.PaidIn))) {
                                         const docRef = firebase.doc(firebase.collection(db, 'payments'));
                                         batch.set(docRef, {
-                                            member: row.Name,
+                                            member: row.Member,
                                             date: row.Date,
-                                            paidIn: parseFloat(row['Paid In'])
+                                            paidIn: parseFloat(row.PaidIn)
                                         });
                                     }
                                 }
@@ -1488,16 +1947,16 @@
                         }
 
                         // Process Loans
-                        if (workbook.Sheets['Loans']) {
+                        if (availableSheets.includes('Loans')) {
                             const loanData = XLSX.utils.sheet_to_json(workbook.Sheets['Loans']);
                             const batch = firebase.writeBatch(db);
                             loanData.forEach(row => {
-                                if (row.Name && row.Date && row.Amount && users.some(u => u.name === row.Name)) {
+                                if (row.Member && row.Date && row.Amount && users.some(u => u.name === row.Member)) {
                                     const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
                                     if (dateMatch && !isNaN(parseFloat(row.Amount))) {
                                         const docRef = firebase.doc(firebase.collection(db, 'loans'));
                                         batch.set(docRef, {
-                                            member: row.Name,
+                                            member: row.Member,
                                             date: row.Date,
                                             amount: parseFloat(row.Amount)
                                         });
@@ -1511,7 +1970,7 @@
                         }
 
                         // Process Expenditures
-                        if (workbook.Sheets['Expenditures']) {
+                        if (availableSheets.includes('Expenditures')) {
                             const expenditureData = XLSX.utils.sheet_to_json(workbook.Sheets['Expenditures']);
                             const batch = firebase.writeBatch(db);
                             expenditureData.forEach(row => {
@@ -1560,7 +2019,8 @@
                                     <p className="text-muted">
                                         File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
                                         Members format: Name, Role, Password (plain text).<br/>
-                                        Payments/Loans format: Name, Date (YYYY-MM-DD), Paid In/Amount.<br/>
+                                        Payments format: Member, Date (YYYY-MM-DD), PaidIn.<br/>
+                                        Loans format: Member, Date (YYYY-MM-DD), Amount.<br/>
                                         Expenditures format: Date (YYYY-MM-DD), Amount.
                                     </p>
                                     <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
