@@ -1705,7 +1705,6 @@
                 totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
                 groupShare: share
             };
-            const currentBalance = yearlyTotals.totalPaid - yearlyTotals.totalLoans - yearlyTotals.totalExpenditures;
             return (
                 <ErrorBoundary>
                     <div>
@@ -1729,7 +1728,6 @@
                                         <p><strong>Total Interest from Loans:</strong> {yearlyTotals.totalInterest.toFixed(2)} KES</p>
                                         <p><strong>Total Expenditures:</strong> {yearlyTotals.totalExpenditures.toFixed(2)} KES</p>
                                         <p><strong>Group Share per Member:</strong> {yearlyTotals.groupShare.toFixed(2)} KES</p>
-                                        <p><strong>Current Available Balance:</strong> <span className={currentBalance >= 0 ? 'positive' : 'negative'}>{currentBalance.toFixed(2)} KES</span></p>
                                     </div>
                                 </div>
                             </div>
