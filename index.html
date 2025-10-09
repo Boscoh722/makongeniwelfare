@@ -47,7 +47,7 @@
     <!-- Bootstrap JS & sha256 -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.10.1/src/sha256.min.js"></script>
-  
+ 
     <!-- XLSX for Excel file handling -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Firebase SDK (Modular Imports) -->
@@ -111,7 +111,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-              
+             
                 const collRef = firebase.collection(db, collectionName);
                 const snapshot = await firebase.getDocs(collRef);
                 return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -126,7 +126,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-              
+             
                 const batch = firebase.writeBatch(db);
                 data.forEach(item => {
                     const docRef = firebase.doc(firebase.collection(db, collectionName));
@@ -145,7 +145,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-              
+             
                 await firebase.addDoc(firebase.collection(db, collectionName), item);
                 return true;
             } catch (e) {
@@ -159,7 +159,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-              
+             
                 const collRef = firebase.collection(db, collectionName);
                 const q = firebase.query(collRef, firebase.where(queryField, '==', queryValue));
                 const snapshot = await firebase.getDocs(q);
@@ -178,7 +178,7 @@
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-              
+             
                 const batch = firebase.writeBatch(db);
                 ids.forEach(id => {
                     const docRef = firebase.doc(db, collectionName, id);
@@ -196,32 +196,60 @@
         const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0;
         // Compute group share per year
         const computeGroupShare = async (year) => {
-            try {
-                const payments = await loadData('payments', []);
-                const loans = await loadData('loans', []);
-                const expenditures = await loadData('expenditures', []);
-                const members = await loadData('users', []);
-              
-                const yearPayments = payments.filter(p => getYear(p.date) === year);
-                const monthlySums = {};
-              
-                yearPayments.forEach(p => {
-                    const key = `${getYear(p.date)}-${getMonth(p.date)}-${p.member}`;
-                    monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
-                });
-              
-                const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
-                const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-                const totalInterest = totalLoans * 0.1;
-                const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-              
-                const groupTotal = totalInterest + totalFines - totalExp;
-                return members.length ? groupTotal / members.length : 0;
-            } catch (e) {
-                console.error("Error computing group share:", e);
-                return 0;
+    try {
+        const payments = await loadData('payments', []);
+        const loans = await loadData('loans', []);
+        const expenditures = await loadData('expenditures', []);
+        const members = await loadData('users', []);
+       
+        if (members.length === 0) return {};
+     
+        const yearPayments = payments.filter(p => getYear(p.date) === year);
+        const monthlySums = {};
+     
+        yearPayments.forEach(p => {
+            const month = getMonth(p.date);
+            const key = `${year}-${month}-${p.member}`;
+            monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
+        });
+     
+        let totalFines = 0;
+        const memberMonths = {};
+        let totalParticipation = 0;
+     
+        members.forEach(member => {
+            memberMonths[member.name] = 0; // Use member.name
+            for (let month = 1; month <= 12; month++) {
+                const key = `${year}-${month}-${member.name}`;
+                const val = monthlySums[key] || 0;
+                if (val < 300) {
+                    totalFines += 50;
+                } else {
+                    memberMonths[member.name] += 1;
+                }
             }
-        };
+            totalParticipation += memberMonths[member.name];
+        });
+     
+        const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+        const totalInterest = totalLoans * 0.1;
+        const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+     
+        const totalProfit = totalFines - totalExp + totalInterest;
+        const perMonthShare = totalParticipation > 0 ? totalProfit / totalParticipation : 0;
+     
+        const shares = {};
+        members.forEach(member => {
+            shares[member.name] = perMonthShare * memberMonths[member.name];
+        });
+     
+        return shares;
+    } catch (e) {
+        console.error("Error computing group share:", e);
+        const members = await loadData('users', []);
+        return members.reduce((acc, member) => ({ ...acc, [member.name]: 0 }), {});
+    }
+};
         // ErrorBoundary
         class ErrorBoundary extends React.Component {
             constructor(props) {
@@ -1508,7 +1536,7 @@
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const totalLoanInterest = totalLoan * 0.1;
-            const net = totalPaid - totalFines + share - totalLoan - totalLoanInterest;
+            const net = totalPaid - totalFines + (share[userId] || 0) - totalLoan - totalLoanInterest;
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
@@ -1688,23 +1716,23 @@
                 const userLoans = loans.filter(l => l.member === u.name && getYear(l.date) === year);
                 const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalLoanInterest = totalLoan * 0.1;
-                const net = totalPaid - totalFines + share - totalLoan - totalLoanInterest;
+                const net = totalPaid - totalFines + (share[u.name] || 0) - totalLoan - totalLoanInterest;
                 return { name: u.name, totalPaid, totalFines, totalLoan, totalLoanInterest, net };
             });
-            const yearlyTotals = {
-                totalPaid: payments.filter(p => getYear(p.date) === year).reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0),
-                totalFines: Object.values(
-                    payments.filter(p => getYear(p.date) === year).reduce((acc, p) => {
-                        const key = `${getMonth(p.date)}-${p.member}`;
-                        acc[key] = (acc[key] || 0) + (parseFloat(p.paidIn) || 0);
-                        return acc;
-                    }, {})
-                ).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0),
-                totalLoans: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
-                totalInterest: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0) * 0.1,
-                totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
-                groupShare: share
-            };
+            let yearlyTotals = {
+    totalPaid: payments.filter(p => getYear(p.date) === year).reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0),
+    totalFines: Object.values(
+        payments.filter(p => getYear(p.date) === year).reduce((acc, p) => {
+            const key = `${getMonth(p.date)}-${p.member}`;
+            acc[key] = (acc[key] || 0) + (parseFloat(p.paidIn) || 0);
+            return acc;
+        }, {})
+    ).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0),
+    totalLoans: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
+    totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
+};
+yearlyTotals.totalInterest = yearlyTotals.totalLoans * 0.1;
+yearlyTotals.groupShare = (yearlyTotals.totalFines - yearlyTotals.totalExpenditures + yearlyTotals.totalInterest) / users.length || 0;
             return (
                 <ErrorBoundary>
                     <div>
@@ -1983,7 +2011,7 @@
                     try {
                         const users = await loadData('users', []);
                         if (!users || users.length === 0) {
-                            await addData('users', { name: 'admin', role: 'Admin', password: sha256('admin') });
+                            await addData('users', { name: 'admin', role: 'Admin', password: sha256('Ghost123') });
                         }
                         const storedUser = sessionStorage.getItem('user');
                         if (storedUser) {
