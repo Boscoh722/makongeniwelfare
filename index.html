@@ -7,9 +7,9 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Courier:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Courier', sans-serif; font-size: 16px; background-color: #f8f9fa; }
+        body { font-family: 'Courier Prime', monospace; font-size: 16px; background-color: #f8f9fa; }
         .navbar { background-color: #28a745 !important; }
         .navbar-brand, .nav-link { color: white !important; }
         .btn-success { background-color: #28a745; border-color: #28a745; }
@@ -44,10 +44,10 @@
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js"></script>
-    <!-- Bootstrap JS & sha256 -->
+    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <!-- SHA256 for password hashing -->
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.10.1/src/sha256.min.js"></script>
- 
     <!-- XLSX for Excel file handling -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Firebase SDK (Modular Imports) -->
@@ -55,11 +55,11 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-        // Make Firebase available globally
         window.firebase = { initializeApp, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
     </script>
     <script type="text/babel">
         const { useState, useEffect } = React;
+
         // Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyBxs__5wmHC3qjd9s0KdC12IkV5huLz52o",
@@ -70,20 +70,19 @@
             appId: "1:131650440596:web:c021c95e1cac6217551381",
             measurementId: "G-F8F3EWSE3S"
         };
+
         // Global database instance
         let db = null;
         let isFirebaseInitialized = false;
         let initializationPromise = null;
+
         // Initialize Firebase with retry logic
         const initializeFirebase = async () => {
             if (isFirebaseInitialized) return true;
             if (initializationPromise) return initializationPromise;
             initializationPromise = (async () => {
                 try {
-                    if (!firebaseConfig.apiKey) {
-                        throw new Error("Firebase configuration is missing or invalid.");
-                    }
-                    // Initialize Firebase app
+                    if (!firebaseConfig.apiKey) throw new Error("Firebase configuration is missing or invalid.");
                     const app = firebase.initializeApp(firebaseConfig);
                     db = firebase.initializeFirestore(app, {
                         localCache: firebase.persistentLocalCache({
@@ -102,16 +101,17 @@
             })();
             return initializationPromise;
         };
+
         // Month names
-        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        // Firestore helpers with corrected modular syntax
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // Firestore helpers
         const loadData = async (collectionName, defaultValue = []) => {
             try {
                 if (!db) {
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-             
                 const collRef = firebase.collection(db, collectionName);
                 const snapshot = await firebase.getDocs(collRef);
                 return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -120,13 +120,13 @@
                 return defaultValue;
             }
         };
+
         const saveData = async (collectionName, data) => {
             try {
                 if (!db) {
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-             
                 const batch = firebase.writeBatch(db);
                 data.forEach(item => {
                     const docRef = firebase.doc(firebase.collection(db, collectionName));
@@ -139,13 +139,13 @@
                 throw e;
             }
         };
+
         const addData = async (collectionName, item) => {
             try {
                 if (!db) {
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-             
                 await firebase.addDoc(firebase.collection(db, collectionName), item);
                 return true;
             } catch (e) {
@@ -153,13 +153,13 @@
                 throw e;
             }
         };
+
         const deleteData = async (collectionName, queryField, queryValue) => {
             try {
                 if (!db) {
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-             
                 const collRef = firebase.collection(db, collectionName);
                 const q = firebase.query(collRef, firebase.where(queryField, '==', queryValue));
                 const snapshot = await firebase.getDocs(q);
@@ -172,16 +172,16 @@
                 throw e;
             }
         };
+
         const deleteByIds = async (collectionName, ids) => {
             try {
                 if (!db) {
                     const initialized = await initializeFirebase();
                     if (!initialized) throw new Error("Database not initialized");
                 }
-             
                 const batch = firebase.writeBatch(db);
                 ids.forEach(id => {
-                    const docRef = firebase.doc(db, collectionName, id);
+                    const docRef = firebase.doc(firebase.collection(db, collectionName), id);
                     batch.delete(docRef);
                 });
                 await batch.commit();
@@ -191,65 +191,79 @@
                 throw e;
             }
         };
+
         // Utils for date parsing
         const getYear = (date) => date ? parseInt(date.split('-')[0], 10) : 0;
         const getMonth = (date) => date ? parseInt(date.split('-')[1], 10) : 0;
-        // Compute group share per year
+
+        // Compute member shares from earnings (proportional based on contributing months)
         const computeGroupShare = async (year) => {
-    try {
-        const payments = await loadData('payments', []);
-        const loans = await loadData('loans', []);
-        const expenditures = await loadData('expenditures', []);
-        const members = await loadData('users', []);
-       
-        if (members.length === 0) return {};
-     
-        const yearPayments = payments.filter(p => getYear(p.date) === year);
-        const monthlySums = {};
-     
-        yearPayments.forEach(p => {
-            const month = getMonth(p.date);
-            const key = `${year}-${month}-${p.member}`;
-            monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
-        });
-     
-        let totalFines = 0;
-        const memberMonths = {};
-        let totalParticipation = 0;
-     
-        members.forEach(member => {
-            memberMonths[member.name] = 0; // Use member.name
-            for (let month = 1; month <= 12; month++) {
-                const key = `${year}-${month}-${member.name}`;
-                const val = monthlySums[key] || 0;
-                if (val < 300) {
-                    totalFines += 50;
-                } else {
-                    memberMonths[member.name] += 1;
-                }
+            try {
+                const payments = await loadData('payments', []);
+                const loans = await loadData('loans', []);
+                const expenditures = await loadData('expenditures', []);
+                const members = await loadData('users', []);
+                
+                if (members.length === 0) return {};
+
+                const yearPayments = payments.filter(p => getYear(p.date) === year);
+                const monthlySums = {};
+                const contributingMonths = {};
+
+                // Calculate total payments per member per month and count contributing months
+                yearPayments.forEach(p => {
+                    const month = getMonth(p.date);
+                    const key = `${year}-${month}-${p.member}`;
+                    monthlySums[key] = (monthlySums[key] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+
+                let totalFines = 0;
+
+                // Initialize contributing months for each member
+                members.forEach(member => {
+                    contributingMonths[member.name] = 0;
+                });
+
+                // Calculate fines and contributing months
+                members.forEach(member => {
+                    for (let month = 1; month <= 12; month++) {
+                        const key = `${year}-${month}-${member.name}`;
+                        const val = monthlySums[key] || 0;
+                        if (val < 300) {
+                            totalFines += 50; // Fine for underpayment
+                        } else {
+                            contributingMonths[member.name] += 1; // Count month where contribution >= 300 KES
+                        }
+                    }
+                });
+
+                // Calculate total contributing months across all members
+                const totalContributingMonths = Object.values(contributingMonths).reduce((sum, count) => sum + count, 0);
+
+                const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+                const totalInterest = totalLoans * 0.1;
+                const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+                const totalProfit = totalFines - totalExp + totalInterest;
+
+                const shares = {};
+                members.forEach(member => {
+                    if (totalContributingMonths > 0) {
+                        const proportion = contributingMonths[member.name] / totalContributingMonths;
+                        shares[member.name] = totalProfit * proportion;
+                    } else {
+                        shares[member.name] = 0;
+                    }
+                });
+
+                return shares;
+            } catch (e) {
+                console.error("Error computing member shares:", e);
+                const members = await loadData('users', []);
+                return members.reduce((acc, member) => ({ ...acc, [member.name]: 0 }), {});
             }
-            totalParticipation += memberMonths[member.name];
-        });
-     
-        const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-        const totalInterest = totalLoans * 0.1;
-        const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-     
-        const totalProfit = totalFines - totalExp + totalInterest;
-        const perMonthShare = totalParticipation > 0 ? totalProfit / totalParticipation : 0;
-     
-        const shares = {};
-        members.forEach(member => {
-            shares[member.name] = perMonthShare * memberMonths[member.name];
-        });
-     
-        return shares;
-    } catch (e) {
-        console.error("Error computing group share:", e);
-        const members = await loadData('users', []);
-        return members.reduce((acc, member) => ({ ...acc, [member.name]: 0 }), {});
-    }
-};
+        };
+
         // ErrorBoundary
         class ErrorBoundary extends React.Component {
             constructor(props) {
@@ -269,7 +283,8 @@
                 return this.props.children;
             }
         }
-        // Database Initialization Check Component
+
+        // DatabaseInitializer
         function DatabaseInitializer({ children }) {
             const [isInitialized, setIsInitialized] = useState(false);
             const [error, setError] = useState('');
@@ -282,13 +297,13 @@
                         if (success) {
                             setIsInitialized(true);
                         } else {
-                            throw new Error("Failed to initialize Firebase. Please check your configuration or network.");
+                            throw new Error("Failed to initialize Firebase.");
                         }
                     } catch (e) {
                         if (retryCount < maxRetries) {
                             setTimeout(() => setRetryCount(retryCount + 1), 2000);
                         } else {
-                            setError(`Database initialization failed after ${maxRetries} attempts: ${e.message}. Please check your network or Firebase configuration.`);
+                            setError(`Initialization failed after ${maxRetries} attempts: ${e.message}`);
                         }
                     }
                 };
@@ -300,26 +315,20 @@
                         <h3>Application Initialization Error</h3>
                         <p>{error}</p>
                         <button className="btn btn-primary mt-3 me-2" onClick={() => { setRetryCount(0); setError(''); }}>
-                            Retry Initialization
+                            Retry
                         </button>
                         <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()}>
-                            Refresh Page
+                            Refresh
                         </button>
                     </div>
                 );
             }
             if (!isInitialized) {
-                return (
-                    <div className="loading">
-                        <div className="spinner-border text-success" role="status">
-                            <span className="visually-hidden">Loading...</span>
-                        </div>
-                        <p className="mt-2">Initializing application... (Attempt {retryCount + 1}/{maxRetries})</p>
-                    </div>
-                );
+                return <div className="loading">Initializing... (Attempt {retryCount + 1}/{maxRetries})</div>;
             }
             return children;
         }
+
         // Login
         function Login({ onLogin }) {
             const [name, setName] = useState('');
@@ -376,6 +385,7 @@
                 </ErrorBoundary>
             );
         }
+
         // Dashboard
         function Dashboard({ user, onLogout }) {
             const [view, setView] = useState('home');
@@ -400,7 +410,7 @@
                     case 'viewPersonal': return true ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
                     case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
-                    case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded successfully')} /> : <AccessDenied />;
+                    case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded')} /> : <AccessDenied />;
                     case 'manageTransactions': return user.role === 'Admin' ? <ManageTransactions year={year} onDeleteSuccess={() => showAlert('Transactions deleted')} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
@@ -425,6 +435,7 @@
                 </ErrorBoundary>
             );
         }
+
         // Home
         function Home({ user, setView }) {
             return (
@@ -434,274 +445,74 @@
                         {user.role === 'Admin' && (
                             <>
                                 <h4 className="mb-3">Member Management</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addMember')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person-plus dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Member</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('batchAddMembers')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Batch Add Members</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewMembers')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person-lines-fill dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">View Members</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addMember')}><div className="card-body text-center"><i className="bi bi-person-plus dashboard-icon fs-1"></i><h5 className="card-title">Add Member</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddMembers')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Members</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewMembers')}><div className="card-body text-center"><i className="bi bi-person-lines-fill dashboard-icon fs-1"></i><h5 className="card-title">View Members</h5></div></div></div>
                                 <h4 className="mb-3 mt-4">Financial Operations</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addPayment')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-currency-exchange dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Payment</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('batchAddPayments')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-receipt dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Batch Add Payments</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addLoan')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-bank dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Loan</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('batchAddLoans')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-credit-card dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Batch Add Loans</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addExpenditure')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-wallet dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Expenditure</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('manageTransactions')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-trash dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Manage Transactions</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <h4 className="mb-3 mt-4">Personal & Group Data</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Personal Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Group Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <h4 className="mb-3 mt-4">Views & Reports</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Monthly Summary</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('uploadData')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-upload dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Upload Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('download')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-download dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Download All Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addPayment')}><div className="card-body text-center"><i className="bi bi-currency-exchange dashboard-icon fs-1"></i><h5 className="card-title">Add Payment</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddPayments')}><div className="card-body text-center"><i className="bi bi-receipt dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Payments</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addLoan')}><div className="card-body text-center"><i className="bi bi-bank dashboard-icon fs-1"></i><h5 className="card-title">Add Loan</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddLoans')}><div className="card-body text-center"><i className="bi bi-credit-card dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Loans</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addExpenditure')}><div className="card-body text-center"><i className="bi bi-wallet dashboard-icon fs-1"></i><h5 className="card-title">Add Expenditure</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('manageTransactions')}><div className="card-body text-center"><i className="bi bi-trash dashboard-icon fs-1"></i><h5 className="card-title">Manage Transactions</h5></div></div></div>
+                                <h4 className="mb-3 mt-4">Data Views</h4>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
+                                <h4 className="mb-3 mt-4">Reports</h4>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('monthlySummary')}><div className="card-body text-center"><i className="bi bi-calendar dashboard-icon fs-1"></i><h5 className="card-title">Monthly Summary</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('uploadData')}><div className="card-body text-center"><i className="bi bi-upload dashboard-icon fs-1"></i><h5 className="card-title">Upload Data</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('download')}><div className="card-body text-center"><i className="bi bi-download dashboard-icon fs-1"></i><h5 className="card-title">Download Data</h5></div></div></div>
                             </>
                         )}
                         {user.role === 'Secretary' && (
                             <>
                                 <h4 className="mb-3">Financial Operations</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addPayment')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-currency-exchange dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Payment</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('batchAddPayments')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-receipt dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Batch Add Payments</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addLoan')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-bank dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Loan</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('batchAddLoans')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-credit-card dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Batch Add Loans</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('addExpenditure')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-wallet dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Add Expenditure</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <h4 className="mb-3 mt-4">Personal & Group Data</h4>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Personal Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Group Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <h4 className="mb-3 mt-4">Views & Reports</h4>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Monthly Summary</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addPayment')}><div className="card-body text-center"><i className="bi bi-currency-exchange dashboard-icon fs-1"></i><h5 className="card-title">Add Payment</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddPayments')}><div className="card-body text-center"><i className="bi bi-receipt dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Payments</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addLoan')}><div className="card-body text-center"><i className="bi bi-bank dashboard-icon fs-1"></i><h5 className="card-title">Add Loan</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddLoans')}><div className="card-body text-center"><i className="bi bi-credit-card dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Loans</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addExpenditure')}><div className="card-body text-center"><i className="bi bi-wallet dashboard-icon fs-1"></i><h5 className="card-title">Add Expenditure</h5></div></div></div>
+                                <h4 className="mb-3 mt-4">Data Views</h4>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
+                                <h4 className="mb-3 mt-4">Reports</h4>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('monthlySummary')}><div className="card-body text-center"><i className="bi bi-calendar dashboard-icon fs-1"></i><h5 className="card-title">Monthly Summary</h5></div></div></div>
                             </>
                         )}
                         {user.role === 'Chairman' && (
                             <>
-                                <h4 className="mb-3">Personal & Group Data</h4>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Personal Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Group Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <h4 className="mb-3 mt-4">Views & Reports</h4>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('monthlySummary')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-calendar dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Monthly Summary</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <h4 className="mb-3">Data Views</h4>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
+                                <h4 className="mb-3 mt-4">Reports</h4>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('monthlySummary')}><div className="card-body text-center"><i className="bi bi-calendar dashboard-icon fs-1"></i><h5 className="card-title">Monthly Summary</h5></div></div></div>
                             </>
                         )}
                         {user.role === 'Treasurer' && (
                             <>
-                                <h4 className="mb-3">Personal & Group Data</h4>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Personal Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Group Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <h4 className="mb-3">Data Views</h4>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
                             </>
                         )}
                         {user.role === 'Member' && (
                             <>
-                                <h4 className="mb-3">Personal & Group Data</h4>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewPersonal')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-person dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Personal Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-6 mb-3">
-                                    <div className="card dashboard-card" onClick={() => setView('viewAll')}>
-                                        <div className="card-body text-center">
-                                            <i className="bi bi-people dashboard-icon fs-1"></i>
-                                            <h5 className="card-title">Group Financial Data</h5>
-                                        </div>
-                                    </div>
-                                </div>
+                                <h4 className="mb-3">Data Views</h4>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
+                                <div className="col-md-6 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
                             </>
                         )}
                     </div>
                 </div>
             );
         }
+
+        // AccessDenied
         function AccessDenied() {
             return <div className="alert alert-danger">Access Denied</div>;
         }
-        // Add Member
+
+        // AddMember
         function AddMember({ onSuccess }) {
             const [name, setName] = useState('');
             const [role, setRole] = useState('Member');
@@ -761,14 +572,15 @@
                                     <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} required disabled={loading} />
                                 </div>
                                 <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Member</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
                         </div>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Batch Add Members
+
+        // BatchAddMembers
         function BatchAddMembers({ onSuccess }) {
             const [input, setInput] = useState('');
             const [error, setError] = useState('');
@@ -780,29 +592,18 @@
                     return;
                 }
                 const lines = input.trim().split('\n').filter(line => line.trim());
-                if (lines.length === 0) {
-                    setError('No valid lines found');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
                 if (!confirm(`Confirm adding ${lines.length} members?`)) return;
                 setLoading(true);
                 setError('');
                 try {
                     const users = await loadData('users', []);
-                    const batch = firebase.writeBatch(db);
                     const newMembers = [];
+                    const batch = firebase.writeBatch(db);
                     for (const line of lines) {
                         const [name, role = 'Member', password] = line.split(',').map(s => s.trim());
-                        if (!name || !password) {
-                            throw new Error(`Invalid format in line: ${line}`);
-                        }
-                        if (users.find(u => u.name === name) || newMembers.find(m => m.name === name)) {
-                            throw new Error(`Duplicate name: ${name}`);
-                        }
-                        if (!['Admin', 'Secretary', 'Chairman', 'Treasurer', 'Member'].includes(role)) {
-                            throw new Error(`Invalid role for ${name}: ${role}`);
-                        }
+                        if (!name || !password) throw new Error(`Invalid format in line: ${line}`);
+                        if (users.find(u => u.name === name) || newMembers.find(m => m.name === name)) throw new Error(`Duplicate name: ${name}`);
+                        if (!['Admin', 'Secretary', 'Chairman', 'Treasurer', 'Member'].includes(role)) throw new Error(`Invalid role for ${name}: ${role}`);
                         const docRef = firebase.doc(firebase.collection(db, 'users'));
                         batch.set(docRef, { name, role, password: sha256(password) });
                         newMembers.push({ name });
@@ -838,14 +639,15 @@
                                 </div>
                                 <p className="text-muted">Role is optional, defaults to 'Member'. Valid roles: Admin, Secretary, Chairman, Treasurer, Member.</p>
                                 <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Members</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
                         </div>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Batch Add Payments
+
+        // BatchAddPayments
         function BatchAddPayments({ onSuccess }) {
             const [input, setInput] = useState('');
             const [error, setError] = useState('');
@@ -857,11 +659,6 @@
                     return;
                 }
                 const lines = input.trim().split('\n').filter(line => line.trim());
-                if (lines.length === 0) {
-                    setError('No valid lines found');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
                 if (!confirm(`Confirm adding ${lines.length} payments?`)) return;
                 setLoading(true);
                 setError('');
@@ -879,12 +676,8 @@
                         } else {
                             throw new Error(`Invalid format in line: ${line}`);
                         }
-                        if (!member || !paidIn || isNaN(parseFloat(paidIn))) {
-                            throw new Error(`Invalid data in line: ${line}`);
-                        }
-                        if (!users.find(u => u.name === member)) {
-                            throw new Error(`Member not found: ${member}`);
-                        }
+                        if (!member || !paidIn || isNaN(parseFloat(paidIn))) throw new Error(`Invalid data in line: ${line}`);
+                        if (!users.find(u => u.name === member)) throw new Error(`Member not found: ${member}`);
                         const docRef = firebase.doc(firebase.collection(db, 'payments'));
                         batch.set(docRef, { member, date, paidIn: parseFloat(paidIn) });
                     }
@@ -907,26 +700,27 @@
                         <div className="row justify-content-center">
                             <div className="col-md-6">
                                 <div className="mb-3">
-                                    <label className="form-label">Payments Data (one per line: member,date,paidIn or member,paidIn - date defaults to today)</label>
+                                    <label className="form-label">Payments Data (one per line: member,date,paidIn or member,paidIn)</label>
                                     <textarea
                                         className="form-control"
                                         rows="10"
                                         value={input}
                                         onChange={e => setInput(e.target.value)}
                                         disabled={loading}
-                                        placeholder="Example:\nJohn,2025-09-20,300\nJane,500\nAlice,2025-10-01,250"
+                                        placeholder="Example:\nJohn,2025-09-20,300\nJane,500"
                                     />
                                 </div>
-                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today's date. Multiple lines for batch upload.</p>
+                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today.</p>
                                 <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Payments</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
                         </div>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Batch Add Loans
+
+        // BatchAddLoans
         function BatchAddLoans({ onSuccess }) {
             const [input, setInput] = useState('');
             const [error, setError] = useState('');
@@ -938,11 +732,6 @@
                     return;
                 }
                 const lines = input.trim().split('\n').filter(line => line.trim());
-                if (lines.length === 0) {
-                    setError('No valid lines found');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
                 if (!confirm(`Confirm adding ${lines.length} loans?`)) return;
                 setLoading(true);
                 setError('');
@@ -960,12 +749,8 @@
                         } else {
                             throw new Error(`Invalid format in line: ${line}`);
                         }
-                        if (!member || !amount || isNaN(parseFloat(amount))) {
-                            throw new Error(`Invalid data in line: ${line}`);
-                        }
-                        if (!users.find(u => u.name === member)) {
-                            throw new Error(`Member not found: ${member}`);
-                        }
+                        if (!member || !amount || isNaN(parseFloat(amount))) throw new Error(`Invalid data in line: ${line}`);
+                        if (!users.find(u => u.name === member)) throw new Error(`Member not found: ${member}`);
                         const docRef = firebase.doc(firebase.collection(db, 'loans'));
                         batch.set(docRef, { member, date, amount: parseFloat(amount) });
                     }
@@ -988,195 +773,27 @@
                         <div className="row justify-content-center">
                             <div className="col-md-6">
                                 <div className="mb-3">
-                                    <label className="form-label">Loans Data (one per line: member,date,amount or member,amount - date defaults to today)</label>
+                                    <label className="form-label">Loans Data (one per line: member,date,amount or member,amount)</label>
                                     <textarea
                                         className="form-control"
                                         rows="10"
                                         value={input}
                                         onChange={e => setInput(e.target.value)}
                                         disabled={loading}
-                                        placeholder="Example:\nJohn,2025-09-20,1000\nJane,500\nAlice,2025-10-01,250"
+                                        placeholder="Example:\nJohn,2025-09-20,1000\nJane,500"
                                     />
                                 </div>
-                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today's date. Multiple lines for batch upload.</p>
+                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today.</p>
                                 <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Loans</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
                         </div>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // View Members
-        function ViewMembers({ onRemoveSuccess }) {
-            const [users, setUsers] = useState([]);
-            const [selectedUsers, setSelectedUsers] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState('');
-            useEffect(() => {
-                setLoading(true);
-                loadData('users', [])
-                    .then(data => {
-                        setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
-                        setLoading(false);
-                    })
-                    .catch(e => {
-                        setError('Error loading members: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
-            }, []);
-            const handleSelect = (name) => {
-                if (name === 'admin') return; // Prevent selecting admin
-                setSelectedUsers(prev =>
-                    prev.includes(name)
-                        ? prev.filter(u => u !== name)
-                        : [...prev, name]
-                );
-            };
-            const handleRemoveSingle = async (name) => {
-                if (name === 'admin') {
-                    alert('Cannot remove default admin account');
-                    return;
-                }
-                if (!confirm(`Are you sure you want to remove ${name}? This will also delete their payments and loans.`)) return;
-                setLoading(true);
-                setError('');
-                try {
-                    await Promise.all([
-                        deleteData('users', 'name', name),
-                        deleteData('payments', 'member', name),
-                        deleteData('loans', 'member', name)
-                    ]);
-                    setUsers(users.filter(u => u.name !== name));
-                    setSelectedUsers(selectedUsers.filter(u => u !== name));
-                    onRemoveSuccess();
-                } catch (e) {
-                    setError('Error removing member: ' + e.message);
-                    setTimeout(() => setError(''), 3000);
-                } finally {
-                    setLoading(false);
-                }
-            };
-            const handleRemoveMultiple = async () => {
-                if (selectedUsers.length === 0) {
-                    setError('Please select at least one member to remove');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
-                if (selectedUsers.includes('admin')) {
-                    alert('Cannot remove default admin account');
-                    return;
-                }
-                if (!confirm(`Are you sure you want to remove ${selectedUsers.length} member(s)? This will also delete their payments and loans.`)) return;
-                setLoading(true);
-                setError('');
-                try {
-                    await Promise.all(selectedUsers.map(name =>
-                        Promise.all([
-                            deleteData('users', 'name', name),
-                            deleteData('payments', 'member', name),
-                            deleteData('loans', 'member', name)
-                        ])
-                    ));
-                    setUsers(users.filter(u => !selectedUsers.includes(u.name)));
-                    setSelectedUsers([]);
-                    onRemoveSuccess();
-                } catch (e) {
-                    setError('Error removing members: ' + e.message);
-                    setTimeout(() => setError(''), 3000);
-                } finally {
-                    setLoading(false);
-                }
-            };
-            return (
-                <ErrorBoundary>
-                    <div>
-                        <h2>Members List</h2>
-                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
-                        {loading && <div className="loading">Loading...</div>}
-                        {!loading && (
-                            <div>
-                                <div className="mb-3">
-                                    <button
-                                        className="btn btn-danger"
-                                        onClick={handleRemoveMultiple}
-                                        disabled={selectedUsers.length === 0 || loading}
-                                    >
-                                        Remove Selected ({selectedUsers.length})
-                                    </button>
-                                    <button
-                                        className="btn btn-secondary ms-2"
-                                        onClick={() => setSelectedUsers([])}
-                                        disabled={selectedUsers.length === 0 || loading}
-                                    >
-                                        Clear Selection
-                                    </button>
-                                </div>
-                                <div className="table-responsive">
-                                    <table className="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedUsers.length === users.filter(u => u.name !== 'admin').length}
-                                                        onChange={() => {
-                                                            if (selectedUsers.length === users.filter(u => u.name !== 'admin').length) {
-                                                                setSelectedUsers([]);
-                                                            } else {
-                                                                setSelectedUsers(users.filter(u => u.name !== 'admin').map(u => u.name));
-                                                            }
-                                                        }}
-                                                        disabled={loading}
-                                                    />
-                                                </th>
-                                                <th>Name</th>
-                                                <th>Role</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {users.map(u => (
-                                                <tr key={u.name}>
-                                                    <td>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedUsers.includes(u.name)}
-                                                            onChange={() => handleSelect(u.name)}
-                                                            disabled={u.name === 'admin' || loading}
-                                                        />
-                                                    </td>
-                                                    <td>{u.name}</td>
-                                                    <td>{u.role}</td>
-                                                    <td>
-                                                        <button
-                                                            className="btn btn-danger btn-sm"
-                                                            onClick={() => handleRemoveSingle(u.name)}
-                                                            disabled={u.name === 'admin' || loading}
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <button
-                                    className="btn btn-secondary mt-3"
-                                    onClick={() => window.location.reload()}
-                                    disabled={loading}
-                                >
-                                    Back to Dashboard
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </ErrorBoundary>
-            );
-        }
-        // Add Payment
+
+        // AddPayment
         function AddPayment({ onSuccess }) {
             const [member, setMember] = useState('');
             const [paidIn, setPaidIn] = useState('');
@@ -1184,17 +801,14 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
             useEffect(() => {
-                setLoading(true);
-                loadData('users', [])
-                    .then(data => {
-                        setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
-                        setLoading(false);
-                    })
-                    .catch(e => {
-                        setError('Error loading users: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
+                loadData('users', []).then(data => {
+                    setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    setLoading(false);
+                }).catch(e => {
+                    setError('Error loading users: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
             }, []);
             const handleSubmit = async () => {
                 if (!member || !paidIn) {
@@ -1238,7 +852,7 @@
                                         <input type="number" step="0.01" className="form-control" value={paidIn} onChange={e => setPaidIn(e.target.value)} required disabled={loading} />
                                     </div>
                                     <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Payment</button>
-                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                                 </div>
                             </div>
                         )}
@@ -1246,7 +860,8 @@
                 </ErrorBoundary>
             );
         }
-        // Add Loan
+
+        // AddLoan
         function AddLoan({ onSuccess }) {
             const [member, setMember] = useState('');
             const [amount, setAmount] = useState('');
@@ -1254,17 +869,14 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
             useEffect(() => {
-                setLoading(true);
-                loadData('users', [])
-                    .then(data => {
-                        setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
-                        setLoading(false);
-                    })
-                    .catch(e => {
-                        setError('Error loading users: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
+                loadData('users', []).then(data => {
+                    setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    setLoading(false);
+                }).catch(e => {
+                    setError('Error loading users: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
             }, []);
             const handleSubmit = async () => {
                 if (!member || !amount) {
@@ -1308,7 +920,7 @@
                                         <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
                                     </div>
                                     <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Loan</button>
-                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                                 </div>
                             </div>
                         )}
@@ -1316,7 +928,8 @@
                 </ErrorBoundary>
             );
         }
-        // Add Expenditure
+
+        // AddExpenditure
         function AddExpenditure({ onSuccess }) {
             const [amount, setAmount] = useState('');
             const [loading, setLoading] = useState(false);
@@ -1348,156 +961,151 @@
                         <h2>Add Expenditure</h2>
                         {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
                         {loading && <div className="loading">Loading...</div>}
-                        {!loading && (
-                            <div className="row justify-content-center">
-                                <div className="col-md-6">
-                                    <div className="mb-3">
-                                        <label className="form-label">Amount (KES)</label>
-                                        <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
-                                    </div>
-                                    <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditure</button>
-                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Amount (KES)</label>
+                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
                                 </div>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditure</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // ViewMembers
+        function ViewMembers({ onRemoveSuccess }) {
+            const [users, setUsers] = useState([]);
+            const [selectedUsers, setSelectedUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            useEffect(() => {
+                loadData('users', []).then(data => {
+                    setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    setLoading(false);
+                }).catch(e => {
+                    setError('Error loading members: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
+            }, []);
+            const handleSelect = (name) => {
+                if (name === 'admin') return;
+                setSelectedUsers(prev =>
+                    prev.includes(name) ? prev.filter(u => u !== name) : [...prev, name]
+                );
+            };
+            const handleRemoveSingle = async (name) => {
+                if (name === 'admin') {
+                    alert('Cannot remove default admin');
+                    return;
+                }
+                if (!confirm(`Remove ${name}? This will delete their payments and loans.`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    await Promise.all([
+                        deleteData('users', 'name', name),
+                        deleteData('payments', 'member', name),
+                        deleteData('loans', 'member', name)
+                    ]);
+                    setUsers(users.filter(u => u.name !== name));
+                    setSelectedUsers(selectedUsers.filter(u => u !== name));
+                    onRemoveSuccess();
+                } catch (e) {
+                    setError('Error removing member: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            const handleRemoveMultiple = async () => {
+                if (selectedUsers.length === 0) {
+                    setError('Select at least one member');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (selectedUsers.includes('admin')) {
+                    alert('Cannot remove default admin');
+                    return;
+                }
+                if (!confirm(`Remove ${selectedUsers.length} member(s)? This will delete their payments and loans.`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    await Promise.all(selectedUsers.map(name =>
+                        Promise.all([
+                            deleteData('users', 'name', name),
+                            deleteData('payments', 'member', name),
+                            deleteData('loans', 'member', name)
+                        ])
+                    ));
+                    setUsers(users.filter(u => !selectedUsers.includes(u.name)));
+                    setSelectedUsers([]);
+                    onRemoveSuccess();
+                } catch (e) {
+                    setError('Error removing members: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Members List</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        {!loading && (
+                            <div>
+                                <div className="mb-3">
+                                    <button className="btn btn-danger" onClick={handleRemoveMultiple} disabled={selectedUsers.length === 0 || loading}>
+                                        Remove Selected ({selectedUsers.length})
+                                    </button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => setSelectedUsers([])} disabled={selectedUsers.length === 0 || loading}>
+                                        Clear Selection
+                                    </button>
+                                </div>
+                                <div className="table-responsive">
+                                    <table className="table table-striped">
+                                        <thead>
+                                            <tr><th><input type="checkbox" checked={selectedUsers.length === users.filter(u => u.name !== 'admin').length} onChange={() => {
+                                                if (selectedUsers.length === users.filter(u => u.name !== 'admin').length) {
+                                                    setSelectedUsers([]);
+                                                } else {
+                                                    setSelectedUsers(users.filter(u => u.name !== 'admin').map(u => u.name));
+                                                }
+                                            }} disabled={loading} /></th><th>Name</th><th>Role</th><th>Actions</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {users.map(u => (
+                                                <tr key={u.name}>
+                                                    <td><input type="checkbox" checked={selectedUsers.includes(u.name)} onChange={() => handleSelect(u.name)} disabled={u.name === 'admin' || loading} /></td>
+                                                    <td>{u.name}</td>
+                                                    <td>{u.role}</td>
+                                                    <td><button className="btn btn-danger btn-sm" onClick={() => handleRemoveSingle(u.name)} disabled={u.name === 'admin' || loading}>Remove</button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
                         )}
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Manage Transactions
-        function ManageTransactions({ year, onDeleteSuccess }) {
-            const [payments, setPayments] = useState([]);
-            const [loans, setLoans] = useState([]);
-            const [expenditures, setExpenditures] = useState([]);
-            const [selectedPayments, setSelectedPayments] = useState([]);
-            const [selectedLoans, setSelectedLoans] = useState([]);
-            const [selectedExpenditures, setSelectedExpenditures] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState('');
-            useEffect(() => {
-                setLoading(true);
-                Promise.all([
-                    loadData('payments', []).then(data => setPayments(data.filter(p => getYear(p.date) === year))),
-                    loadData('loans', []).then(data => setLoans(data.filter(l => getYear(l.date) === year))),
-                    loadData('expenditures', []).then(data => setExpenditures(data.filter(e => getYear(e.date) === year)))
-                ])
-                    .then(() => setLoading(false))
-                    .catch(e => {
-                        setError('Error loading transactions: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
-            }, [year]);
-            const handleSelect = (type, id) => {
-                const setter = type === 'payments' ? setSelectedPayments : type === 'loans' ? setSelectedLoans : setSelectedExpenditures;
-                setter(prev =>
-                    prev.includes(id)
-                        ? prev.filter(u => u !== id)
-                        : [...prev, id]
-                );
-            };
-            const handleDelete = async (type, selected) => {
-                if (selected.length === 0) {
-                    setError('Please select at least one to delete');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
-                if (!confirm(`Are you sure you want to delete ${selected.length} ${type}?`)) return;
-                setLoading(true);
-                setError('');
-                try {
-                    await deleteByIds(type, selected);
-                    if (type === 'payments') {
-                        setPayments(payments.filter(p => !selected.includes(p.id)));
-                        setSelectedPayments([]);
-                    } else if (type === 'loans') {
-                        setLoans(loans.filter(l => !selected.includes(l.id)));
-                        setSelectedLoans([]);
-                    } else {
-                        setExpenditures(expenditures.filter(e => !selected.includes(e.id)));
-                        setSelectedExpenditures([]);
-                    }
-                    onDeleteSuccess();
-                } catch (e) {
-                    setError('Error deleting: ' + e.message);
-                    setTimeout(() => setError(''), 3000);
-                } finally {
-                    setLoading(false);
-                }
-            };
-            if (loading) return <div className="loading">Loading...</div>;
-            if (error) return <div className="alert alert-danger">{error}</div>;
-            return (
-                <ErrorBoundary>
-                    <div>
-                        <h2>Manage Transactions for {year}</h2>
-                        <h4>Payments</h4>
-                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('payments', selectedPayments)} disabled={selectedPayments.length === 0}>Delete Selected Payments ({selectedPayments.length})</button>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr><th>Select</th><th>Member</th><th>Date</th><th>Paid In</th></tr>
-                                </thead>
-                                <tbody>
-                                    {payments.map(p => (
-                                        <tr key={p.id}>
-                                            <td><input type="checkbox" checked={selectedPayments.includes(p.id)} onChange={() => handleSelect('payments', p.id)} /></td>
-                                            <td>{p.member}</td>
-                                            <td>{p.date}</td>
-                                            <td>{p.paidIn}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <h4>Loans</h4>
-                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('loans', selectedLoans)} disabled={selectedLoans.length === 0}>Delete Selected Loans ({selectedLoans.length})</button>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr><th>Select</th><th>Member</th><th>Date</th><th>Amount</th></tr>
-                                </thead>
-                                <tbody>
-                                    {loans.map(l => (
-                                        <tr key={l.id}>
-                                            <td><input type="checkbox" checked={selectedLoans.includes(l.id)} onChange={() => handleSelect('loans', l.id)} /></td>
-                                            <td>{l.member}</td>
-                                            <td>{l.date}</td>
-                                            <td>{l.amount}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <h4>Expenditures</h4>
-                        <button className="btn btn-danger mb-3" onClick={() => handleDelete('expenditures', selectedExpenditures)} disabled={selectedExpenditures.length === 0}>Delete Selected Expenditures ({selectedExpenditures.length})</button>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr><th>Select</th><th>Date</th><th>Amount</th></tr>
-                                </thead>
-                                <tbody>
-                                    {expenditures.map(e => (
-                                        <tr key={e.id}>
-                                            <td><input type="checkbox" checked={selectedExpenditures.includes(e.id)} onChange={() => handleSelect('expenditures', e.id)} /></td>
-                                            <td>{e.date}</td>
-                                            <td>{e.amount}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()}>Back to Dashboard</button>
-                    </div>
-                </ErrorBoundary>
-            );
-        }
-        // View Personal Data
+
+        // ViewPersonal
         function ViewPersonal({ userId, year, setYear }) {
             const [allPayments, setAllPayments] = useState([]);
             const [allLoans, setAllLoans] = useState([]);
             const [allExpenditures, setAllExpenditures] = useState([]);
-            const [share, setShare] = useState(0);
+            const [share, setShare] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
             useEffect(() => {
@@ -1508,13 +1116,11 @@
                     loadData('loans', []).then(data => setAllLoans(data.filter(l => getYear(l.date) === year))),
                     loadData('expenditures', []).then(data => setAllExpenditures(data.filter(e => getYear(e.date) === year))),
                     computeGroupShare(year).then(data => setShare(data))
-                ])
-                    .then(() => setLoading(false))
-                    .catch(e => {
-                        setError('Error loading data: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
+                ]).then(() => setLoading(false)).catch(e => {
+                    setError('Error loading data: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
             }, [year]);
             if (loading) return <div className="loading">Loading...</div>;
             if (error) return <div className="alert alert-danger">{error}</div>;
@@ -1536,7 +1142,8 @@
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const totalLoanInterest = totalLoan * 0.1;
-            const net = totalPaid - totalFines + (share[userId] || 0) - totalLoan - totalLoanInterest;
+            const memberShare = share[userId] || 0;
+            const net = totalPaid - totalFines + memberShare - totalLoan - totalLoanInterest;
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
@@ -1581,158 +1188,82 @@
                                     <div className="card-body">
                                         <h5 className="card-title">Yearly Summary</h5>
                                         <p><strong>Total Paid:</strong> {totalPaid.toFixed(2)} KES</p>
-                                        <p><strong>Total Fines (deducted):</strong> {totalFines} KES</p>
+                                        <p><strong>Total Fines (deducted):</strong> {totalFines.toFixed(2)} KES</p>
                                         <p><strong>Total Loans:</strong> {totalLoan.toFixed(2)} KES</p>
                                         <p><strong>Total Loan Interest (deducted):</strong> {totalLoanInterest.toFixed(2)} KES</p>
+                                        <p><strong>Member Share:</strong> {memberShare.toFixed(2)} KES</p>
                                         <p><span className={net >= 0 ? 'positive' : 'negative'}><strong>Net Amount:</strong> {net.toFixed(2)} KES</span></p>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back</button>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Monthly Summary
-        function MonthlySummary({ year, setYear }) {
-            const [payments, setPayments] = useState([]);
-            const [loans, setLoans] = useState([]);
-            const [expenditures, setExpenditures] = useState([]);
-            const [users, setUsers] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState('');
-            useEffect(() => {
-                setLoading(true);
-                setError('');
-                Promise.all([
-                    loadData('payments', []).then(data => setPayments(data.filter(p => getYear(p.date) === year))),
-                    loadData('loans', []).then(data => setLoans(data.filter(l => getYear(l.date) === year))),
-                    loadData('expenditures', []).then(data => setExpenditures(data.filter(e => getYear(e.date) === year))),
-                    loadData('users', []).then(data => setUsers(data))
-                ])
-                    .then(() => setLoading(false))
-                    .catch(e => {
-                        setError('Error loading data: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
-            }, [year]);
-            if (loading) return <div className="loading">Loading...</div>;
-            if (error) return <div className="alert alert-danger">{error}</div>;
-            const monthlyData = MONTH_NAMES.map((name, i) => {
-                const month = i + 1;
-                const monthPayments = payments.filter(p => getMonth(p.date) === month);
-                const totalPaid = monthPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
-                const monthLoans = loans.filter(l => getMonth(l.date) === month);
-                const totalLoans = monthLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-                const monthExpenditures = expenditures.filter(e => getMonth(e.date) === month);
-                const totalExpenditures = monthExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-                const monthlySums = {};
-                monthPayments.forEach(p => {
-                    monthlySums[p.member] = (monthlySums[p.member] || 0) + (parseFloat(p.paidIn) || 0);
-                });
-                const totalFines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
-                return { month: name, totalPaid, totalFines, totalLoans, totalExpenditures };
-            });
-            return (
-                <ErrorBoundary>
-                    <div>
-                        <div className="mb-3">
-                            <label className="form-label">Year</label>
-                            <select className="form-select w-auto d-inline-block" value={year} onChange={e => setYear(parseInt(e.target.value, 10))}>
-                                <option value={2024}>2024</option>
-                                <option value={2025}>2025</option>
-                                <option value={2026}>2026</option>
-                            </select>
-                        </div>
-                        <h2>Monthly Summary for {year}</h2>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Month</th>
-                                        <th>Total Paid (KES)</th>
-                                        <th>Total Fines (KES)</th>
-                                        <th>Total Loans (KES)</th>
-                                        <th>Total Expenditures (KES)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {monthlyData.map((m, i) => (
-                                        <tr key={i}>
-                                            <td>{m.month}</td>
-                                            <td>{m.totalPaid.toFixed(2)}</td>
-                                            <td>{m.totalFines}</td>
-                                            <td>{m.totalLoans.toFixed(2)}</td>
-                                            <td>{m.totalExpenditures.toFixed(2)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
-                    </div>
-                </ErrorBoundary>
-            );
-        }
-        // View All Data
+
+        // ViewAllData
         function ViewAllData({ year, setYear }) {
+            const [allPayments, setAllPayments] = useState([]);
+            const [allLoans, setAllLoans] = useState([]);
+            const [allExpenditures, setAllExpenditures] = useState([]);
             const [users, setUsers] = useState([]);
-            const [payments, setPayments] = useState([]);
-            const [loans, setLoans] = useState([]);
-            const [expenditures, setExpenditures] = useState([]);
-            const [share, setShare] = useState(0);
+            const [share, setShare] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+
             useEffect(() => {
                 setLoading(true);
                 setError('');
                 Promise.all([
+                    loadData('payments', []).then(data => setAllPayments(data.filter(p => getYear(p.date) === year))),
+                    loadData('loans', []).then(data => setAllLoans(data.filter(l => getYear(l.date) === year))),
+                    loadData('expenditures', []).then(data => setAllExpenditures(data.filter(e => getYear(e.date) === year))),
                     loadData('users', []).then(data => setUsers(data.sort((a, b) => a.name.localeCompare(b.name)))),
-                    loadData('payments', []).then(data => setPayments(data)),
-                    loadData('loans', []).then(data => setLoans(data)),
-                    loadData('expenditures', []).then(data => setExpenditures(data)),
                     computeGroupShare(year).then(data => setShare(data))
-                ])
-                    .then(() => setLoading(false))
-                    .catch(e => {
-                        setError('Error loading data: ' + e.message);
-                        setLoading(false);
-                        setTimeout(() => setError(''), 3000);
-                    });
+                ]).then(() => setLoading(false)).catch(e => {
+                    setError('Error loading data: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
             }, [year]);
+
             if (loading) return <div className="loading">Loading...</div>;
             if (error) return <div className="alert alert-danger">{error}</div>;
-            const data = users.map(u => {
-                const userPayments = payments.filter(p => p.member === u.name && getYear(p.date) === year);
-                const monthlyData = {};
+
+            const totalFines = users.reduce((sum, user) => {
+                const userPayments = allPayments.filter(p => p.member === user.name);
+                const monthlySums = {};
                 userPayments.forEach(p => {
                     const m = getMonth(p.date);
-                    monthlyData[m] = (monthlyData[m] || 0) + (parseFloat(p.paidIn) || 0);
+                    monthlySums[m] = (monthlySums[m] || 0) + (parseFloat(p.paidIn) || 0);
                 });
-                const totalPaid = Object.values(monthlyData).reduce((sum, val) => sum + val, 0);
-                const totalFines = Object.values(monthlyData).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
-                const userLoans = loans.filter(l => l.member === u.name && getYear(l.date) === year);
+                return sum + Object.values(monthlySums).reduce((s, val) => s + (val < 300 ? 50 : 0), 0);
+            }, 0);
+
+            const totalExpenditures = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            const totalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const totalLoanInterest = totalLoans * 0.1;
+            const totalProfit = totalFines - totalExpenditures + totalLoanInterest;
+
+            const memberData = users.map(user => {
+                const userPayments = allPayments.filter(p => p.member === user.name);
+                const totalPaid = userPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
+                const monthlySums = {};
+                userPayments.forEach(p => {
+                    const m = getMonth(p.date);
+                    monthlySums[m] = (monthlySums[m] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+                const fines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
+                const userLoans = allLoans.filter(l => l.member === user.name);
                 const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalLoanInterest = totalLoan * 0.1;
-                const net = totalPaid - totalFines + (share[u.name] || 0) - totalLoan - totalLoanInterest;
-                return { name: u.name, totalPaid, totalFines, totalLoan, totalLoanInterest, net };
+                const memberShare = share[user.name] || 0;
+                const net = totalPaid - fines + memberShare - totalLoan - totalLoanInterest;
+                return { name: user.name, totalPaid, fines, totalLoan, totalLoanInterest, memberShare, net };
             });
-            let yearlyTotals = {
-    totalPaid: payments.filter(p => getYear(p.date) === year).reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0),
-    totalFines: Object.values(
-        payments.filter(p => getYear(p.date) === year).reduce((acc, p) => {
-            const key = `${getMonth(p.date)}-${p.member}`;
-            acc[key] = (acc[key] || 0) + (parseFloat(p.paidIn) || 0);
-            return acc;
-        }, {})
-    ).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0),
-    totalLoans: loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
-    totalExpenditures: expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
-};
-yearlyTotals.totalInterest = yearlyTotals.totalLoans * 0.1;
-yearlyTotals.groupShare = (yearlyTotals.totalFines - yearlyTotals.totalExpenditures + yearlyTotals.totalInterest) / users.length || 0;
+
             return (
                 <ErrorBoundary>
                     <div>
@@ -1745,199 +1276,57 @@ yearlyTotals.groupShare = (yearlyTotals.totalFines - yearlyTotals.totalExpenditu
                             </select>
                         </div>
                         <h2>Group Financial Data for {year}</h2>
-                        <div className="row mb-4">
+                        <div className="row">
+                            <div className="col-md-8">
+                                <h4>Member Breakdown</h4>
+                                <div className="table-responsive">
+                                    <table className="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Total Paid (KES)</th>
+                                                <th>Fines (KES)</th>
+                                                <th>Total Loans (KES)</th>
+                                                <th>Loan Interest (KES)</th>
+                                                <th>Member Share (KES)</th>
+                                                <th>Net Amount (KES)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {memberData.map((m, i) => (
+                                                <tr key={i}>
+                                                    <td>{m.name}</td>
+                                                    <td>{m.totalPaid.toFixed(2)}</td>
+                                                    <td>{m.fines.toFixed(2)}</td>
+                                                    <td>{m.totalLoan.toFixed(2)}</td>
+                                                    <td>{m.totalLoanInterest.toFixed(2)}</td>
+                                                    <td>{m.memberShare.toFixed(2)}</td>
+                                                    <td className={m.net >= 0 ? 'positive' : 'negative'}>{m.net.toFixed(2)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                             <div className="col-md-4">
                                 <div className="card">
                                     <div className="card-body">
-                                        <h5 className="card-title">Yearly Summary</h5>
-                                        <p><strong>Total Paid:</strong> {yearlyTotals.totalPaid.toFixed(2)} KES</p>
-                                        <p><strong>Total Fines:</strong> {yearlyTotals.totalFines.toFixed(2)} KES</p>
-                                        <p><strong>Total Loans:</strong> {yearlyTotals.totalLoans.toFixed(2)} KES</p>
-                                        <p><strong>Total Interest from Loans:</strong> {yearlyTotals.totalInterest.toFixed(2)} KES</p>
-                                        <p><strong>Total Expenditures:</strong> {yearlyTotals.totalExpenditures.toFixed(2)} KES</p>
-                                        <p><strong>Group Share per Member:</strong> {yearlyTotals.groupShare.toFixed(2)} KES</p>
+                                        <h5 className="card-title">Group Summary</h5>
+                                        <p><strong>Total Fines:</strong> {totalFines.toFixed(2)} KES</p>
+                                        <p><strong>Total Expenditures:</strong> {totalExpenditures.toFixed(2)} KES</p>
+                                        <p><strong>Total Loans:</strong> {totalLoans.toFixed(2)} KES</p>
+                                        <p><strong>Total Loan Interest:</strong> {totalLoanInterest.toFixed(2)} KES</p>
+                                        <p><strong>Total Profit:</strong> {totalProfit.toFixed(2)} KES</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div className="table-responsive">
-                            <table className="table table-striped">
-                                <thead>
-                                    <tr><th>Name</th><th>Total Paid (KES)</th><th>Total Fines (deducted) (KES)</th><th>Total Loans (KES)</th><th>Total Loan Interest (deducted) (KES)</th><th>Net Amount (KES)</th></tr>
-                                </thead>
-                                <tbody>
-                                    {data.map(d => (
-                                        <tr key={d.name} className={d.net < 0 ? 'table-danger' : d.net > 0 ? 'table-success' : ''}>
-                                            <td>{d.name}</td>
-                                            <td>{d.totalPaid.toFixed(2)}</td>
-                                            <td>{d.totalFines}</td>
-                                            <td>{d.totalLoan.toFixed(2)}</td>
-                                            <td>{d.totalLoanInterest.toFixed(2)}</td>
-                                            <td className={d.net >= 0 ? 'positive' : 'negative'}>{d.net.toFixed(2)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back to Dashboard</button>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back</button>
                     </div>
                 </ErrorBoundary>
             );
         }
-        // Upload Data
-        function UploadData({ onSuccess }) {
-            const [file, setFile] = useState(null);
-            const [error, setError] = useState('');
-            const [loading, setLoading] = useState(false);
-            const handleFileChange = (e) => {
-                setFile(e.target.files[0]);
-                setError('');
-            };
-            const handleUpload = async () => {
-                if (!file) {
-                    setError('Please select a file');
-                    setTimeout(() => setError(''), 3000);
-                    return;
-                }
-                setLoading(true);
-                setError('');
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        let users = await loadData('users', []);
-                        const requiredSheets = ['Members', 'Payments', 'Loans', 'Expenditures'];
-                        const availableSheets = workbook.SheetNames;
-                        const missingSheets = requiredSheets.filter(sheet => !availableSheets.includes(sheet));
-                        if (missingSheets.length > 0) {
-                            console.warn(`Missing sheets: ${missingSheets.join(', ')}. Processing available sheets.`);
-                        }
-                        // Process Members
-                        if (availableSheets.includes('Members')) {
-                            const memberData = XLSX.utils.sheet_to_json(workbook.Sheets['Members']);
-                            const batch = firebase.writeBatch(db);
-                            memberData.forEach(row => {
-                                if (row.Name && row.Role && row.Password && !users.find(u => u.name === row.Name)) {
-                                    const docRef = firebase.doc(firebase.collection(db, 'users'));
-                                    batch.set(docRef, {
-                                        name: row.Name,
-                                        role: row.Role,
-                                        password: sha256(row.Password)
-                                    });
-                                }
-                            });
-                            await batch.commit();
-                            users = await loadData('users', []);
-                            console.log('Members processed successfully');
-                        } else {
-                            console.warn('Members sheet not found');
-                        }
-                        // Process Payments
-                        if (availableSheets.includes('Payments')) {
-                            const paymentData = XLSX.utils.sheet_to_json(workbook.Sheets['Payments']);
-                            const batch = firebase.writeBatch(db);
-                            paymentData.forEach(row => {
-                                if (row.Member && row.Date && row.PaidIn && users.some(u => u.name === row.Member)) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row.PaidIn))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'payments'));
-                                        batch.set(docRef, {
-                                            member: row.Member,
-                                            date: row.Date,
-                                            paidIn: parseFloat(row.PaidIn)
-                                        });
-                                    }
-                                }
-                            });
-                            await batch.commit();
-                            console.log('Payments processed successfully');
-                        } else {
-                            console.warn('Payments sheet not found');
-                        }
-                        // Process Loans
-                        if (availableSheets.includes('Loans')) {
-                            const loanData = XLSX.utils.sheet_to_json(workbook.Sheets['Loans']);
-                            const batch = firebase.writeBatch(db);
-                            loanData.forEach(row => {
-                                if (row.Member && row.Date && row.Amount && users.some(u => u.name === row.Member)) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'loans'));
-                                        batch.set(docRef, {
-                                            member: row.Member,
-                                            date: row.Date,
-                                            amount: parseFloat(row.Amount)
-                                        });
-                                    }
-                                }
-                            });
-                            await batch.commit();
-                            console.log('Loans processed successfully');
-                        } else {
-                            console.warn('Loans sheet not found');
-                        }
-                        // Process Expenditures
-                        if (availableSheets.includes('Expenditures')) {
-                            const expenditureData = XLSX.utils.sheet_to_json(workbook.Sheets['Expenditures']);
-                            const batch = firebase.writeBatch(db);
-                            expenditureData.forEach(row => {
-                                if (row.Date && row.Amount) {
-                                    const dateMatch = String(row.Date).match(/(\d{4})-(\d{2})-(\d{2})/);
-                                    if (dateMatch && !isNaN(parseFloat(row.Amount))) {
-                                        const docRef = firebase.doc(firebase.collection(db, 'expenditures'));
-                                        batch.set(docRef, {
-                                            date: row.Date,
-                                            amount: parseFloat(row.Amount)
-                                        });
-                                    }
-                                }
-                            });
-                            await batch.commit();
-                            console.log('Expenditures processed successfully');
-                        } else {
-                            console.warn('Expenditures sheet not found');
-                        }
-                        onSuccess();
-                        setFile(null);
-                    } catch (e) {
-                        setError('Error processing file: ' + e.message);
-                        setTimeout(() => setError(''), 3000);
-                    } finally {
-                        setLoading(false);
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            };
-            return (
-                <ErrorBoundary>
-                    <div>
-                        <h2>Upload Data</h2>
-                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
-                        {loading && <div className="loading">Loading...</div>}
-                        {!loading && (
-                            <div className="row justify-content-center">
-                                <div className="col-md-6">
-                                    <div className="mb-3">
-                                        <label className="form-label">Excel File</label>
-                                        <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loading} />
-                                    </div>
-                                    <p className="text-muted">
-                                        File must be an Excel spreadsheet with sheets named 'Members', 'Payments', 'Loans', and 'Expenditures'.<br/>
-                                        Members format: Name, Role, Password (plain text).<br/>
-                                        Payments format: Member, Date (YYYY-MM-DD), PaidIn.<br/>
-                                        Loans format: Member, Date (YYYY-MM-DD), Amount.<br/>
-                                        Expenditures format: Date (YYYY-MM-DD), Amount.
-                                    </p>
-                                    <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
-                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back to Dashboard</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </ErrorBoundary>
-            );
-        }
+
         // Download Data
         function DownloadData({ year }) {
             const [loading, setLoading] = useState(false);
