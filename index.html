@@ -1327,6 +1327,229 @@
             );
         }
 
+        // MonthlySummary
+        function MonthlySummary({ year, setYear }) {
+            const [data, setData] = useState({ payments: [], loans: [], exp: [] });
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                setLoading(true);
+                Promise.all([
+                    loadData('payments', []).then(p => setData(prev => ({ ...prev, payments: p.filter(pp => getYear(pp.date) === year) }))),
+                    loadData('loans', []).then(l => setData(prev => ({ ...prev, loans: l.filter(ll => getYear(ll.date) === year) }))),
+                    loadData('expenditures', []).then(e => setData(prev => ({ ...prev, exp: e.filter(ee => getYear(ee.date) === year) })))
+                ]).then(() => setLoading(false)).catch(() => setLoading(false));
+            }, [year]);
+            if (loading) return <div className="loading">Loading...</div>;
+            const summary = MONTH_NAMES.map((name, i) => {
+                const m = i + 1;
+                const paid = data.payments.filter(p => getMonth(p.date) === m).reduce((s, p) => s + parseFloat(p.paidIn || 0), 0);
+                const loaned = data.loans.filter(l => getMonth(l.date) === m).reduce((s, l) => s + parseFloat(l.amount || 0), 0);
+                const ex = data.exp.filter(e => getMonth(e.date) === m).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                const profit = paid - ex + (loaned * 0.1);
+                return { month: name, paid, loaned, ex, profit };
+            });
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <div className="mb-3">
+                            <label className="form-label">Year</label>
+                            <select className="form-select w-auto d-inline-block" value={year} onChange={e => setYear(parseInt(e.target.value, 10))}>
+                                <option value={2024}>2024</option>
+                                <option value={2025}>2025</option>
+                                <option value={2026}>2026</option>
+                            </select>
+                        </div>
+                        <h2>Monthly Summary for {year}</h2>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Month</th><th>Contributions (KES)</th><th>Loans (KES)</th><th>Expenditures (KES)</th><th>Profit (KES)</th></tr>
+                                </thead>
+                                <tbody>
+                                    {summary.map((s, i) => (
+                                        <tr key={i}>
+                                            <td>{s.month}</td>
+                                            <td>{s.paid.toFixed(2)}</td>
+                                            <td>{s.loaned.toFixed(2)}</td>
+                                            <td>{s.ex.toFixed(2)}</td>
+                                            <td className={s.profit >= 0 ? 'positive' : 'negative'}>{s.profit.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary mt-2" onClick={() => window.location.reload()}>Back</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // UploadData
+        function UploadData({ onSuccess }) {
+            const [file, setFile] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const handleFileChange = (e) => setFile(e.target.files[0]);
+            const handleUpload = async () => {
+                if (!file) {
+                    setError('Please select a file');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    const batch = firebase.writeBatch(db);
+                    jsonData.forEach(row => {
+                        const { type, member, date, paidIn, amount } = row;
+                        let docRef, data;
+                        if (type === 'payment' && member && paidIn) {
+                            docRef = firebase.doc(firebase.collection(db, 'payments'));
+                            data = { member, date: date || new Date().toISOString().split('T')[0], paidIn: parseFloat(paidIn) };
+                            batch.set(docRef, data);
+                        } else if (type === 'loan' && member && amount) {
+                            docRef = firebase.doc(firebase.collection(db, 'loans'));
+                            data = { member, date: date || new Date().toISOString().split('T')[0], amount: parseFloat(amount) };
+                            batch.set(docRef, data);
+                        } else if (type === 'expenditure' && amount) {
+                            docRef = firebase.doc(firebase.collection(db, 'expenditures'));
+                            data = { date: date || new Date().toISOString().split('T')[0], amount: parseFloat(amount) };
+                            batch.set(docRef, data);
+                        }
+                    });
+                    await batch.commit();
+                    setFile(null);
+                    onSuccess();
+                } catch (e) {
+                    setError('Error uploading data: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Upload Data</h2>
+                        {error && <div className="alert alert-danger">{error}</div>}
+                        {loading && <div className="loading">Uploading...</div>}
+                        <div className="mb-3">
+                            <label className="form-label">Select Excel File</label>
+                            <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loading} />
+                            <p className="text-muted mt-2">Expected format: Columns - type (payment/loan/expenditure), member (for payment/loan), date (YYYY-MM-DD optional), paidIn/amount.</p>
+                        </div>
+                        <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
+                        <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
+        // ManageTransactions
+        function ManageTransactions({ year, onDeleteSuccess }) {
+            const [transactions, setTransactions] = useState([]);
+            const [selected, setSelected] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            useEffect(() => {
+                setLoading(true);
+                Promise.all([
+                    loadData('payments', []).then(p => p.filter(pp => getYear(pp.date) === year).map(pp => ({ ...pp, type: 'Payment', coll: 'payments' }))),
+                    loadData('loans', []).then(l => l.filter(ll => getYear(ll.date) === year).map(ll => ({ ...ll, type: 'Loan', coll: 'loans' }))),
+                    loadData('expenditures', []).then(e => e.filter(ee => getYear(ee.date) === year).map(ee => ({ ...ee, type: 'Expenditure', coll: 'expenditures', member: '' })))
+                ]).then(([p, l, e]) => {
+                    setTransactions([...p, ...l, ...e].sort((a, b) => new Date(b.date) - new Date(a.date)));
+                    setLoading(false);
+                }).catch(err => {
+                    setError('Error loading transactions: ' + err.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
+            }, [year]);
+            const toggleSelect = (id, coll) => {
+                setSelected(prev => {
+                    const isSelected = prev.some(s => s.id === id && s.coll === coll);
+                    if (isSelected) {
+                        return prev.filter(s => !(s.id === id && s.coll === coll));
+                    } else {
+                        return [...prev, { id, coll }];
+                    }
+                });
+            };
+            const handleDeleteSelected = async () => {
+                if (selected.length === 0) {
+                    setError('Select at least one transaction');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                if (!confirm(`Delete ${selected.length} transaction(s)?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    const groups = selected.reduce((acc, { coll, id }) => {
+                        if (!acc[coll]) acc[coll] = [];
+                        acc[coll].push(id);
+                        return acc;
+                    }, {});
+                    await Promise.all(Object.entries(groups).map(([coll, ids]) => deleteByIds(coll, ids)));
+                    setTransactions(transactions.filter(t => !selected.some(s => s.id === t.id && s.coll === t.coll)));
+                    setSelected([]);
+                    onDeleteSuccess();
+                } catch (e) {
+                    setError('Error deleting transactions: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            if (loading) return <div className="loading">Loading...</div>;
+            if (error) return <div className="alert alert-danger">{error}</div>;
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Manage Transactions for {year}</h2>
+                        <div className="mb-3">
+                            <button className="btn btn-danger" onClick={handleDeleteSelected} disabled={selected.length === 0 || loading}>
+                                Delete Selected ({selected.length})
+                            </button>
+                            <button className="btn btn-secondary ms-2" onClick={() => setSelected([])} disabled={selected.length === 0 || loading}>
+                                Clear Selection
+                            </button>
+                        </div>
+                        <div className="table-responsive">
+                            <table className="table table-striped">
+                                <thead>
+                                    <tr><th>Type</th><th>Date</th><th>Member</th><th>Amount (KES)</th><th><input type="checkbox" checked={selected.length === transactions.length} onChange={() => {
+                                        if (selected.length === transactions.length) {
+                                            setSelected([]);
+                                        } else {
+                                            setSelected(transactions.map(t => ({ id: t.id, coll: t.coll })));
+                                        }
+                                    }} disabled={loading} /></th></tr>
+                                </thead>
+                                <tbody>
+                                    {transactions.map((t, i) => (
+                                        <tr key={i}>
+                                            <td>{t.type}</td>
+                                            <td>{t.date}</td>
+                                            <td>{t.member || '-'}</td>
+                                            <td>{(t.paidIn || t.amount || 0).toFixed(2)}</td>
+                                            <td><input type="checkbox" checked={selected.some(s => s.id === t.id && s.coll === t.coll)} onChange={() => toggleSelect(t.id, t.coll)} disabled={loading} /></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()} disabled={loading}>Back</button>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
         // Download Data
         function DownloadData({ year }) {
             const [loading, setLoading] = useState(false);
