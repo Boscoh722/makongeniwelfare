@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Makongeni Green Nairobi Welfare</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>Leaf</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@300;400;700&display=swap" rel="stylesheet">
@@ -40,6 +40,7 @@
 </head>
 <body>
     <div id="root"></div>
+
     <!-- React + Babel -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -57,6 +58,7 @@
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
         window.firebase = { initializeApp, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
     </script>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
 
@@ -201,7 +203,6 @@
             try {
                 const payments = await loadData('payments', []);
                 const loans = await loadData('loans', []);
-                const expenditures = await loadData('expenditures', []);
                 const members = await loadData('users', []);
                 
                 if (members.length === 0) return {};
@@ -242,9 +243,8 @@
 
                 const totalLoans = loans.filter(l => getYear(l.date) === year).reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalInterest = totalLoans * 0.1;
-                const totalExp = expenditures.filter(e => getYear(e.date) === year).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
-                const totalProfit = totalFines - totalExp + totalInterest;
+                const totalProfit = totalFines + totalInterest;
 
                 const shares = {};
                 members.forEach(member => {
@@ -406,6 +406,7 @@
                     case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
                     case 'batchAddLoans': return ['Admin', 'Secretary'].includes(user.role) ? <BatchAddLoans onSuccess={() => showAlert('Loans added')} /> : <AccessDenied />;
                     case 'addExpenditure': return ['Admin', 'Secretary'].includes(user.role) ? <AddExpenditure onSuccess={() => showAlert('Expenditure added')} /> : <AccessDenied />;
+                    case 'batchAddExpenditures': return ['Admin', 'Secretary'].includes(user.role) ? <BatchAddExpenditures onSuccess={() => showAlert('Expenditures added')} /> : <AccessDenied />;
                     case 'viewAll': return ['Admin', 'Secretary', 'Chairman', 'Treasurer', 'Member'].includes(user.role) ? <ViewAllData {...viewProps} /> : <AccessDenied />;
                     case 'viewPersonal': return true ? <ViewPersonal userId={user.name} {...viewProps} /> : <AccessDenied />;
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
@@ -454,6 +455,7 @@
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addLoan')}><div className="card-body text-center"><i className="bi bi-bank dashboard-icon fs-1"></i><h5 className="card-title">Add Loan</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddLoans')}><div className="card-body text-center"><i className="bi bi-credit-card dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Loans</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addExpenditure')}><div className="card-body text-center"><i className="bi bi-wallet dashboard-icon fs-1"></i><h5 className="card-title">Add Expenditure</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddExpenditures')}><div className="card-body text-center"><i className="bi bi-receipt-cutoff dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Expenditures</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('manageTransactions')}><div className="card-body text-center"><i className="bi bi-trash dashboard-icon fs-1"></i><h5 className="card-title">Manage Transactions</h5></div></div></div>
                                 <h4 className="mb-3 mt-4">Data Views</h4>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
@@ -472,6 +474,7 @@
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addLoan')}><div className="card-body text-center"><i className="bi bi-bank dashboard-icon fs-1"></i><h5 className="card-title">Add Loan</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddLoans')}><div className="card-body text-center"><i className="bi bi-credit-card dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Loans</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('addExpenditure')}><div className="card-body text-center"><i className="bi bi-wallet dashboard-icon fs-1"></i><h5 className="card-title">Add Expenditure</h5></div></div></div>
+                                <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('batchAddExpenditures')}><div className="card-body text-center"><i className="bi bi-receipt-cutoff dashboard-icon fs-1"></i><h5 className="card-title">Batch Add Expenditures</h5></div></div></div>
                                 <h4 className="mb-3 mt-4">Data Views</h4>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewPersonal')}><div className="card-body text-center"><i className="bi bi-person dashboard-icon fs-1"></i><h5 className="card-title">Personal Data</h5></div></div></div>
                                 <div className="col-md-4 mb-3"><div className="card dashboard-card" onClick={() => setView('viewAll')}><div className="card-body text-center"><i className="bi bi-people dashboard-icon fs-1"></i><h5 className="card-title">Group Data</h5></div></div></div>
@@ -793,6 +796,79 @@
             );
         }
 
+        // BatchAddExpenditures
+        function BatchAddExpenditures({ onSuccess }) {
+            const [input, setInput] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const handleSubmit = async () => {
+                if (!input.trim()) {
+                    setError('Please enter expenditure data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                const lines = input.trim().split('\n').filter(line => line.trim());
+                if (!confirm(`Confirm adding ${lines.length} expenditures?`)) return;
+                setLoading(true);
+                setError('');
+                try {
+                    const users = await loadData('users', []);
+                    const batch = firebase.writeBatch(db);
+                    for (const line of lines) {
+                        const parts = line.split(',').map(s => s.trim());
+                        let member, date, amount;
+                        if (parts.length === 3) {
+                            [member, date, amount] = parts;
+                        } else if (parts.length === 2) {
+                            [member, amount] = parts;
+                            date = new Date().toISOString().split('T')[0];
+                        } else {
+                            throw new Error(`Invalid format in line: ${line}`);
+                        }
+                        if (!member || !amount || isNaN(parseFloat(amount))) throw new Error(`Invalid data in line: ${line}`);
+                        if (!users.find(u => u.name === member)) throw new Error(`Member not found: ${member}`);
+                        const docRef = firebase.doc(firebase.collection(db, 'expenditures'));
+                        batch.set(docRef, { member, date, amount: parseFloat(amount) });
+                    }
+                    await batch.commit();
+                    setInput('');
+                    onSuccess();
+                } catch (e) {
+                    setError('Error adding expenditures: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            return (
+                <ErrorBoundary>
+                    <div>
+                        <h2>Batch Add Expenditures</h2>
+                        {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
+                        {loading && <div className="loading">Loading...</div>}
+                        <div className="row justify-content-center">
+                            <div className="col-md-6">
+                                <div className="mb-3">
+                                    <label className="form-label">Expenditures Data (one per line: member,date,amount or member,amount)</label>
+                                    <textarea
+                                        className="form-control"
+                                        rows="10"
+                                        value={input}
+                                        onChange={e => setInput(e.target.value)}
+                                        disabled={loading}
+                                        placeholder="Example:\nJohn,2025-09-20,1500\nJane,800"
+                                    />
+                                </div>
+                                <p className="text-muted">Date format: YYYY-MM-DD. If omitted, uses today.</p>
+                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditures</button>
+                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorBoundary>
+            );
+        }
+
         // AddPayment
         function AddPayment({ onSuccess }) {
             const [member, setMember] = useState('');
@@ -931,11 +1007,23 @@
 
         // AddExpenditure
         function AddExpenditure({ onSuccess }) {
+            const [member, setMember] = useState('');
             const [amount, setAmount] = useState('');
-            const [loading, setLoading] = useState(false);
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+            useEffect(() => {
+                loadData('users', []).then(data => {
+                    setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
+                    setLoading(false);
+                }).catch(e => {
+                    setError('Error loading users: ' + e.message);
+                    setLoading(false);
+                    setTimeout(() => setError(''), 3000);
+                });
+            }, []);
             const handleSubmit = async () => {
-                if (!amount) {
+                if (!member || !amount) {
                     setError('Please fill all fields');
                     setTimeout(() => setError(''), 3000);
                     return;
@@ -945,8 +1033,8 @@
                 setError('');
                 try {
                     const today = new Date().toISOString().split('T')[0];
-                    await addData('expenditures', { date: today, amount: parseFloat(amount) });
-                    setAmount('');
+                    await addData('expenditures', { member, date: today, amount: parseFloat(amount) });
+                    setAmount(''); setMember('');
                     onSuccess();
                 } catch (e) {
                     setError('Error adding expenditure: ' + e.message);
@@ -961,16 +1049,25 @@
                         <h2>Add Expenditure</h2>
                         {error && <div className="alert alert-danger alert-dismissible">{error}</div>}
                         {loading && <div className="loading">Loading...</div>}
-                        <div className="row justify-content-center">
-                            <div className="col-md-6">
-                                <div className="mb-3">
-                                    <label className="form-label">Amount (KES)</label>
-                                    <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
+                        {!loading && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="mb-3">
+                                        <label className="form-label">Member</label>
+                                        <select className="form-select" value={member} onChange={e => setMember(e.target.value)} required disabled={loading}>
+                                            <option value="">Select Member</option>
+                                            {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">Amount (KES)</label>
+                                        <input type="number" step="0.01" className="form-control" value={amount} onChange={e => setAmount(e.target.value)} required disabled={loading} />
+                                    </div>
+                                    <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditure</button>
+                                    <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                                 </div>
-                                <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>Add Expenditure</button>
-                                <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </ErrorBoundary>
             );
@@ -1010,7 +1107,8 @@
                     await Promise.all([
                         deleteData('users', 'name', name),
                         deleteData('payments', 'member', name),
-                        deleteData('loans', 'member', name)
+                        deleteData('loans', 'member', name),
+                        deleteData('expenditures', 'member', name)
                     ]);
                     setUsers(users.filter(u => u.name !== name));
                     setSelectedUsers(selectedUsers.filter(u => u !== name));
@@ -1040,7 +1138,8 @@
                         Promise.all([
                             deleteData('users', 'name', name),
                             deleteData('payments', 'member', name),
-                            deleteData('loans', 'member', name)
+                            deleteData('loans', 'member', name),
+                            deleteData('expenditures', 'member', name)
                         ])
                     ));
                     setUsers(users.filter(u => !selectedUsers.includes(u.name)));
@@ -1126,6 +1225,7 @@
             if (error) return <div className="alert alert-danger">{error}</div>;
             const userPayments = allPayments.filter(p => p.member === userId);
             const userLoans = allLoans.filter(l => l.member === userId);
+            const userExpenditures = allExpenditures.filter(e => e.member === userId);
             const monthlyData = {};
             userPayments.forEach(p => {
                 const m = getMonth(p.date);
@@ -1138,16 +1238,22 @@
                 const m = getMonth(l.date);
                 monthlyLoans[m] = (monthlyLoans[m] || 0) + (parseFloat(l.amount) || 0);
             });
+            const monthlyExpenditures = {};
+            userExpenditures.forEach(e => {
+                const m = getMonth(e.date);
+                monthlyExpenditures[m] = (monthlyExpenditures[m] || 0) + (parseFloat(e.amount) || 0);
+            });
             const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
             const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
             const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const totalLoanInterest = totalLoan * 0.1;
+            const totalExpenditures = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
             const memberShare = share[userId] || 0;
-            const net = totalPaid - totalFines + memberShare - totalLoan - totalLoanInterest;
+            const net = totalPaid - totalFines - totalExpenditures + memberShare - totalLoan - totalLoanInterest;
             const months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
-                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates, loan: monthlyLoans[mIndex] || 0 };
+                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates, loan: monthlyLoans[mIndex] || 0, exp: monthlyExpenditures[mIndex] || 0 };
             });
             return (
                 <ErrorBoundary>
@@ -1167,7 +1273,7 @@
                                 <div className="table-responsive">
                                     <table className="table table-striped">
                                         <thead>
-                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Total Loans (KES)</th><th>Payment Dates</th></tr>
+                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Total Loans (KES)</th><th>Total Expenditures (KES)</th><th>Payment Dates</th></tr>
                                         </thead>
                                         <tbody>
                                             {months.map((m, i) => (
@@ -1176,6 +1282,7 @@
                                                     <td>{m.paid.toFixed(2)}</td>
                                                     <td>{m.fine}</td>
                                                     <td>{m.loan.toFixed(2)}</td>
+                                                    <td>{m.exp.toFixed(2)}</td>
                                                     <td>{m.dates.join(', ')}</td>
                                                 </tr>
                                             ))}
@@ -1189,6 +1296,7 @@
                                         <h5 className="card-title">Yearly Summary</h5>
                                         <p><strong>Total Paid:</strong> {totalPaid.toFixed(2)} KES</p>
                                         <p><strong>Total Fines (deducted):</strong> {totalFines.toFixed(2)} KES</p>
+                                        <p><strong>Total Expenditures (deducted):</strong> {totalExpenditures.toFixed(2)} KES</p>
                                         <p><strong>Total Loans:</strong> {totalLoan.toFixed(2)} KES</p>
                                         <p><strong>Total Loan Interest (deducted):</strong> {totalLoanInterest.toFixed(2)} KES</p>
                                         <p><strong>Member Share:</strong> {memberShare.toFixed(2)} KES</p>
@@ -1245,7 +1353,7 @@
             const totalExpenditures = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
             const totalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
             const totalLoanInterest = totalLoans * 0.1;
-            const totalProfit = totalFines - totalExpenditures + totalLoanInterest;
+            const totalProfit = totalFines + totalLoanInterest;
 
             const memberData = users.map(user => {
                 const userPayments = allPayments.filter(p => p.member === user.name);
@@ -1259,9 +1367,11 @@
                 const userLoans = allLoans.filter(l => l.member === user.name);
                 const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalLoanInterest = totalLoan * 0.1;
+                const userExpenditures = allExpenditures.filter(e => e.member === user.name);
+                const totalExp = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
                 const memberShare = share[user.name] || 0;
-                const net = totalPaid - fines + memberShare - totalLoan - totalLoanInterest;
-                return { name: user.name, totalPaid, fines, totalLoan, totalLoanInterest, memberShare, net };
+                const net = totalPaid - fines - totalExp + memberShare - totalLoan - totalLoanInterest;
+                return { name: user.name, totalPaid, fines, totalExp, totalLoan, totalLoanInterest, memberShare, net };
             });
 
             return (
@@ -1286,6 +1396,7 @@
                                                 <th>Name</th>
                                                 <th>Total Paid (KES)</th>
                                                 <th>Fines (KES)</th>
+                                                <th>Total Expenditures (KES)</th>
                                                 <th>Total Loans (KES)</th>
                                                 <th>Loan Interest (KES)</th>
                                                 <th>Member Share (KES)</th>
@@ -1298,6 +1409,7 @@
                                                     <td>{m.name}</td>
                                                     <td>{m.totalPaid.toFixed(2)}</td>
                                                     <td>{m.fines.toFixed(2)}</td>
+                                                    <td>{m.totalExp.toFixed(2)}</td>
                                                     <td>{m.totalLoan.toFixed(2)}</td>
                                                     <td>{m.totalLoanInterest.toFixed(2)}</td>
                                                     <td>{m.memberShare.toFixed(2)}</td>
@@ -1345,7 +1457,7 @@
                 const paid = data.payments.filter(p => getMonth(p.date) === m).reduce((s, p) => s + parseFloat(p.paidIn || 0), 0);
                 const loaned = data.loans.filter(l => getMonth(l.date) === m).reduce((s, l) => s + parseFloat(l.amount || 0), 0);
                 const ex = data.exp.filter(e => getMonth(e.date) === m).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-                const profit = paid - ex + (loaned * 0.1);
+                const profit = paid + (loaned * 0.1);
                 return { month: name, paid, loaned, ex, profit };
             });
             return (
@@ -1415,9 +1527,9 @@
                             docRef = firebase.doc(firebase.collection(db, 'loans'));
                             data = { member, date: date || new Date().toISOString().split('T')[0], amount: parseFloat(amount) };
                             batch.set(docRef, data);
-                        } else if (type === 'expenditure' && amount) {
+                        } else if (type === 'expenditure' && member && amount) {
                             docRef = firebase.doc(firebase.collection(db, 'expenditures'));
-                            data = { date: date || new Date().toISOString().split('T')[0], amount: parseFloat(amount) };
+                            data = { member, date: date || new Date().toISOString().split('T')[0], amount: parseFloat(amount) };
                             batch.set(docRef, data);
                         }
                     });
@@ -1440,7 +1552,7 @@
                         <div className="mb-3">
                             <label className="form-label">Select Excel File</label>
                             <input type="file" className="form-control" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loading} />
-                            <p className="text-muted mt-2">Expected format: Columns - type (payment/loan/expenditure), member (for payment/loan), date (YYYY-MM-DD optional), paidIn/amount.</p>
+                            <p className="text-muted mt-2">Expected format: Columns - type (payment/loan/expenditure), member, date (YYYY-MM-DD optional), paidIn or amount.</p>
                         </div>
                         <button className="btn btn-success" onClick={handleUpload} disabled={!file || loading}>Upload Data</button>
                         <button className="btn btn-secondary ms-2" onClick={() => window.location.reload()} disabled={loading}>Back</button>
@@ -1460,7 +1572,7 @@
                 Promise.all([
                     loadData('payments', []).then(p => p.filter(pp => getYear(pp.date) === year).map(pp => ({ ...pp, type: 'Payment', coll: 'payments' }))),
                     loadData('loans', []).then(l => l.filter(ll => getYear(ll.date) === year).map(ll => ({ ...ll, type: 'Loan', coll: 'loans' }))),
-                    loadData('expenditures', []).then(e => e.filter(ee => getYear(ee.date) === year).map(ee => ({ ...ee, type: 'Expenditure', coll: 'expenditures', member: '' })))
+                    loadData('expenditures', []).then(e => e.filter(ee => getYear(ee.date) === year).map(ee => ({ ...ee, type: 'Expenditure', coll: 'expenditures' })))
                 ]).then(([p, l, e]) => {
                     setTransactions([...p, ...l, ...e].sort((a, b) => new Date(b.date) - new Date(a.date)));
                     setLoading(false);
@@ -1574,9 +1686,9 @@
                     loans.filter(l => getYear(l.date) === year).forEach(l => {
                         csv += `${l.member},${l.date},${l.amount}\n`;
                     });
-                    csv += '\nExpenditures\nDate,Amount\n';
+                    csv += '\nExpenditures\nName,Date,Amount\n';
                     expenditures.filter(e => getYear(e.date) === year).forEach(e => {
-                        csv += `${e.date},${e.amount}\n`;
+                        csv += `${e.member},${e.date},${e.amount}\n`;
                     });
                     const blob = new Blob([csv], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
@@ -1610,6 +1722,7 @@
                 </ErrorBoundary>
             );
         }
+
         // Main App
         function App() {
             const [user, setUser] = useState(null);
@@ -1661,6 +1774,7 @@
                 </DatabaseInitializer>
             );
         }
+
         // Render (React 18)
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
