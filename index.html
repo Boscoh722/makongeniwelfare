@@ -44,6 +44,10 @@
         .dashboard-card { cursor: pointer; transition: transform 0.2s; }
         .dashboard-card:hover { transform: scale(1.05); }
         .dashboard-icon { color: #28a745; }
+        .sortable { cursor: pointer; }
+        .sortable::after { content: ' \25B4'; opacity: 0.5; }
+        .sortable.asc::after { content: ' \25B2'; opacity: 1; }
+        .sortable.desc::after { content: ' \25BC'; opacity: 1; }
     </style>
 </head>
 <body>
@@ -62,9 +66,9 @@
     <!-- Firebase SDK (Modular Imports) -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
         import { getAuth } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-        window.firebase = { initializeApp, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc };
+        window.firebase = { initializeApp, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getAuth, collection, getDocs, setDoc, addDoc, deleteDoc, query, where, writeBatch, doc, updateDoc };
     </script>
 
     <script type="text/babel">
@@ -160,6 +164,21 @@
                 return true;
             } catch (e) {
                 console.error(`Error adding to ${collectionName}:`, e);
+                throw e;
+            }
+        };
+
+        const updateData = async (collectionName, id, updates) => {
+            try {
+                if (!db) {
+                    const initialized = await initializeFirebase();
+                    if (!initialized) throw new Error("Database not initialized");
+                }
+                const docRef = firebase.doc(db, collectionName, id);
+                await firebase.updateDoc(docRef, updates);
+                return true;
+            } catch (e) {
+                console.error(`Error updating in ${collectionName}:`, e);
                 throw e;
             }
         };
@@ -408,7 +427,7 @@
                 switch (view) {
                     case 'addMember': return user.role === 'Admin' ? <AddMember onSuccess={() => showAlert('Member added')} /> : <AccessDenied />;
                     case 'batchAddMembers': return user.role === 'Admin' ? <BatchAddMembers onSuccess={() => showAlert('Members added')} /> : <AccessDenied />;
-                    case 'viewMembers': return user.role === 'Admin' ? <ViewMembers onRemoveSuccess={() => showAlert('Member(s) removed')} /> : <AccessDenied />;
+                    case 'viewMembers': return user.role === 'Admin' ? <ViewMembers onRemoveSuccess={() => showAlert('Member(s) removed')} onEditSuccess={() => showAlert('Member updated')} /> : <AccessDenied />;
                     case 'addPayment': return ['Admin', 'Secretary'].includes(user.role) ? <AddPayment onSuccess={() => showAlert('Payment added')} /> : <AccessDenied />;
                     case 'batchAddPayments': return ['Admin', 'Secretary'].includes(user.role) ? <BatchAddPayments onSuccess={() => showAlert('Payments added')} /> : <AccessDenied />;
                     case 'addLoan': return ['Admin', 'Secretary'].includes(user.role) ? <AddLoan onSuccess={() => showAlert('Loan added')} /> : <AccessDenied />;
@@ -420,7 +439,7 @@
                     case 'download': return user.role === 'Admin' ? <DownloadData year={year} /> : <AccessDenied />;
                     case 'monthlySummary': return ['Admin', 'Secretary', 'Chairman'].includes(user.role) ? <MonthlySummary {...viewProps} /> : <AccessDenied />;
                     case 'uploadData': return user.role === 'Admin' ? <UploadData onSuccess={() => showAlert('Data uploaded')} /> : <AccessDenied />;
-                    case 'manageTransactions': return user.role === 'Admin' ? <ManageTransactions year={year} onDeleteSuccess={() => showAlert('Transactions deleted')} /> : <AccessDenied />;
+                    case 'manageTransactions': return user.role === 'Admin' ? <ManageTransactions year={year} onDeleteSuccess={() => showAlert('Transactions deleted')} onEditSuccess={() => showAlert('Transaction updated')} /> : <AccessDenied />;
                     default: return <Home user={user} setView={setView} />;
                 }
             };
@@ -1082,11 +1101,15 @@
         }
 
         // ViewMembers
-        function ViewMembers({ onRemoveSuccess }) {
+        function ViewMembers({ onRemoveSuccess, onEditSuccess }) {
             const [users, setUsers] = useState([]);
             const [selectedUsers, setSelectedUsers] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortColumn, setSortColumn] = useState('name');
+            const [sortDirection, setSortDirection] = useState('asc');
+            const [editingUser, setEditingUser] = useState(null);
             useEffect(() => {
                 loadData('users', []).then(data => {
                     setUsers(data.sort((a, b) => a.name.localeCompare(b.name)));
@@ -1160,6 +1183,51 @@
                     setLoading(false);
                 }
             };
+            const handleEdit = (user) => {
+                if (user.name === 'admin') {
+                    alert('Cannot edit default admin');
+                    return;
+                }
+                setEditingUser({ ...user, newPassword: '' });
+            };
+            const handleSaveEdit = async () => {
+                if (!editingUser.role) {
+                    setError('Role is required');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                setLoading(true);
+                try {
+                    const updates = { role: editingUser.role };
+                    if (editingUser.newPassword) {
+                        updates.password = sha256(editingUser.newPassword);
+                    }
+                    await updateData('users', editingUser.id, updates);
+                    setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...updates } : u));
+                    setEditingUser(null);
+                    onEditSuccess();
+                } catch (e) {
+                    setError('Error updating member: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            const handleSort = (column) => {
+                const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
+                setSortColumn(column);
+                setSortDirection(direction);
+            };
+            const filteredUsers = users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.role.toLowerCase().includes(searchTerm.toLowerCase()));
+            const sortedUsers = filteredUsers.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
             return (
                 <ErrorBoundary>
                     <div>
@@ -1169,6 +1237,7 @@
                         {!loading && (
                             <div>
                                 <div className="mb-3">
+                                    <input type="text" className="form-control d-inline-block w-50 me-2" placeholder="Search by name or role" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                     <button className="btn btn-danger" onClick={handleRemoveMultiple} disabled={selectedUsers.length === 0 || loading}>
                                         Remove Selected ({selectedUsers.length})
                                     </button>
@@ -1179,27 +1248,67 @@
                                 <div className="table-responsive">
                                     <table className="table table-striped">
                                         <thead>
-                                            <tr><th><input type="checkbox" checked={selectedUsers.length === users.filter(u => u.name !== 'admin').length} onChange={() => {
-                                                if (selectedUsers.length === users.filter(u => u.name !== 'admin').length) {
-                                                    setSelectedUsers([]);
-                                                } else {
-                                                    setSelectedUsers(users.filter(u => u.name !== 'admin').map(u => u.name));
-                                                }
-                                            }} disabled={loading} /></th><th>Name</th><th>Role</th><th>Actions</th></tr>
+                                            <tr>
+                                                <th><input type="checkbox" checked={selectedUsers.length === sortedUsers.filter(u => u.name !== 'admin').length} onChange={() => {
+                                                    if (selectedUsers.length === sortedUsers.filter(u => u.name !== 'admin').length) {
+                                                        setSelectedUsers([]);
+                                                    } else {
+                                                        setSelectedUsers(sortedUsers.filter(u => u.name !== 'admin').map(u => u.name));
+                                                    }
+                                                }} disabled={loading} /></th>
+                                                <th className={`sortable ${sortColumn === 'name' ? sortDirection : ''}`} onClick={() => handleSort('name')}>Name</th>
+                                                <th className={`sortable ${sortColumn === 'role' ? sortDirection : ''}`} onClick={() => handleSort('role')}>Role</th>
+                                                <th>Actions</th>
+                                            </tr>
                                         </thead>
                                         <tbody>
-                                            {users.map(u => (
+                                            {sortedUsers.map(u => (
                                                 <tr key={u.name}>
                                                     <td><input type="checkbox" checked={selectedUsers.includes(u.name)} onChange={() => handleSelect(u.name)} disabled={u.name === 'admin' || loading} /></td>
                                                     <td>{u.name}</td>
                                                     <td>{u.role}</td>
-                                                    <td><button className="btn btn-danger btn-sm" onClick={() => handleRemoveSingle(u.name)} disabled={u.name === 'admin' || loading}>Remove</button></td>
+                                                    <td>
+                                                        <button className="btn btn-primary btn-sm me-2" onClick={() => handleEdit(u)} disabled={u.name === 'admin' || loading}>Edit</button>
+                                                        <button className="btn btn-danger btn-sm" onClick={() => handleRemoveSingle(u.name)} disabled={u.name === 'admin' || loading}>Remove</button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
                                 <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()} disabled={loading}>Back</button>
+                            </div>
+                        )}
+                        {editingUser && (
+                            <div className="modal fade show d-block" tabIndex="-1" role="dialog">
+                                <div className="modal-dialog" role="document">
+                                    <div className="modal-content">
+                                        <div className="modal-header">
+                                            <h5 className="modal-title">Edit Member: {editingUser.name}</h5>
+                                            <button type="button" className="btn-close" onClick={() => setEditingUser(null)}></button>
+                                        </div>
+                                        <div className="modal-body">
+                                            <div className="mb-3">
+                                                <label className="form-label">Role</label>
+                                                <select className="form-select" value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}>
+                                                    <option value="Admin">Admin</option>
+                                                    <option value="Secretary">Secretary</option>
+                                                    <option value="Chairman">Chairman</option>
+                                                    <option value="Treasurer">Treasurer</option>
+                                                    <option value="Member">Member</option>
+                                                </select>
+                                            </div>
+                                            <div className="mb-3">
+                                                <label className="form-label">New Password (leave blank to keep current)</label>
+                                                <input type="password" className="form-control" value={editingUser.newPassword} onChange={e => setEditingUser({ ...editingUser, newPassword: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div className="modal-footer">
+                                            <button type="button" className="btn btn-secondary" onClick={() => setEditingUser(null)}>Close</button>
+                                            <button type="button" className="btn btn-primary" onClick={handleSaveEdit}>Save changes</button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1215,6 +1324,9 @@
             const [share, setShare] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortColumn, setSortColumn] = useState('month');
+            const [sortDirection, setSortDirection] = useState('asc');
             useEffect(() => {
                 setLoading(true);
                 setError('');
@@ -1258,10 +1370,27 @@
             const totalExpenditures = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
             const memberShare = share[userId] || 0;
             const net = totalPaid - totalFines - totalExpenditures + memberShare - totalLoan - totalLoanInterest;
-            const months = MONTH_NAMES.map((name, i) => {
+            let months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
-                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates, loan: monthlyLoans[mIndex] || 0, exp: monthlyExpenditures[mIndex] || 0 };
+                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates.join(', '), loan: monthlyLoans[mIndex] || 0, exp: monthlyExpenditures[mIndex] || 0 };
+            });
+            months = months.filter(m => m.month.toLowerCase().includes(searchTerm.toLowerCase()));
+            const handleSort = (column) => {
+                const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
+                setSortColumn(column);
+                setSortDirection(direction);
+            };
+            months.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (sortColumn === 'month') {
+                    valA = MONTH_NAMES.indexOf(a.month);
+                    valB = MONTH_NAMES.indexOf(b.month);
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
             });
             return (
                 <ErrorBoundary>
@@ -1278,10 +1407,18 @@
                         <div className="row">
                             <div className="col-md-8">
                                 <h4>Monthly Breakdown</h4>
+                                <input type="text" className="form-control mb-3" placeholder="Search by month" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                 <div className="table-responsive">
                                     <table className="table table-striped">
                                         <thead>
-                                            <tr><th>Month</th><th>Total Paid (KES)</th><th>Fine (KES)</th><th>Total Loans (KES)</th><th>Total Expenditures (KES)</th><th>Payment Dates</th></tr>
+                                            <tr>
+                                                <th className={`sortable ${sortColumn === 'month' ? sortDirection : ''}`} onClick={() => handleSort('month')}>Month</th>
+                                                <th className={`sortable ${sortColumn === 'paid' ? sortDirection : ''}`} onClick={() => handleSort('paid')}>Total Paid (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'fine' ? sortDirection : ''}`} onClick={() => handleSort('fine')}>Fine (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'loan' ? sortDirection : ''}`} onClick={() => handleSort('loan')}>Total Loans (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'exp' ? sortDirection : ''}`} onClick={() => handleSort('exp')}>Total Expenditures (KES)</th>
+                                                <th>Payment Dates</th>
+                                            </tr>
                                         </thead>
                                         <tbody>
                                             {months.map((m, i) => (
@@ -1291,7 +1428,7 @@
                                                     <td>{m.fine}</td>
                                                     <td>{m.loan.toFixed(2)}</td>
                                                     <td>{m.exp.toFixed(2)}</td>
-                                                    <td>{m.dates.join(', ')}</td>
+                                                    <td>{m.dates}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1328,6 +1465,9 @@
             const [share, setShare] = useState({});
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortColumn, setSortColumn] = useState('name');
+            const [sortDirection, setSortDirection] = useState('asc');
 
             useEffect(() => {
                 setLoading(true);
@@ -1363,7 +1503,7 @@
             const totalLoanInterest = totalLoans * 0.1;
             const totalProfit = totalFines + totalLoanInterest;
 
-            const memberData = users.map(user => {
+            let memberData = users.map(user => {
                 const userPayments = allPayments.filter(p => p.member === user.name);
                 const totalPaid = userPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
                 const monthlySums = {};
@@ -1382,6 +1522,26 @@
                 return { name: user.name, totalPaid, fines, totalExp, totalLoan, totalLoanInterest, memberShare, net };
             });
 
+            memberData = memberData.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+            const handleSort = (column) => {
+                const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
+                setSortColumn(column);
+                setSortDirection(direction);
+            };
+
+            memberData.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (sortColumn === 'name') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
             return (
                 <ErrorBoundary>
                     <div>
@@ -1397,18 +1557,19 @@
                         <div className="row">
                             <div className="col-md-8">
                                 <h4>Member Breakdown</h4>
+                                <input type="text" className="form-control mb-3" placeholder="Search by name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                 <div className="table-responsive">
                                     <table className="table table-striped">
                                         <thead>
                                             <tr>
-                                                <th>Name</th>
-                                                <th>Total Paid (KES)</th>
-                                                <th>Fines (KES)</th>
-                                                <th>Total Expenditures (KES)</th>
-                                                <th>Total Loans (KES)</th>
-                                                <th>Loan Interest (KES)</th>
-                                                <th>Member Share (KES)</th>
-                                                <th>Net Amount (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'name' ? sortDirection : ''}`} onClick={() => handleSort('name')}>Name</th>
+                                                <th className={`sortable ${sortColumn === 'totalPaid' ? sortDirection : ''}`} onClick={() => handleSort('totalPaid')}>Total Paid (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'fines' ? sortDirection : ''}`} onClick={() => handleSort('fines')}>Fines (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'totalExp' ? sortDirection : ''}`} onClick={() => handleSort('totalExp')}>Total Expenditures (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'totalLoan' ? sortDirection : ''}`} onClick={() => handleSort('totalLoan')}>Total Loans (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'totalLoanInterest' ? sortDirection : ''}`} onClick={() => handleSort('totalLoanInterest')}>Loan Interest (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'memberShare' ? sortDirection : ''}`} onClick={() => handleSort('memberShare')}>Member Share (KES)</th>
+                                                <th className={`sortable ${sortColumn === 'net' ? sortDirection : ''}`} onClick={() => handleSort('net')}>Net Amount (KES)</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1451,6 +1612,9 @@
         function MonthlySummary({ year, setYear }) {
             const [data, setData] = useState({ payments: [], loans: [], exp: [] });
             const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortColumn, setSortColumn] = useState('month');
+            const [sortDirection, setSortDirection] = useState('asc');
             useEffect(() => {
                 setLoading(true);
                 Promise.all([
@@ -1460,13 +1624,30 @@
                 ]).then(() => setLoading(false)).catch(() => setLoading(false));
             }, [year]);
             if (loading) return <div className="loading">Loading...</div>;
-            const summary = MONTH_NAMES.map((name, i) => {
+            let summary = MONTH_NAMES.map((name, i) => {
                 const m = i + 1;
                 const paid = data.payments.filter(p => getMonth(p.date) === m).reduce((s, p) => s + parseFloat(p.paidIn || 0), 0);
                 const loaned = data.loans.filter(l => getMonth(l.date) === m).reduce((s, l) => s + parseFloat(l.amount || 0), 0);
                 const ex = data.exp.filter(e => getMonth(e.date) === m).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
                 const profit = paid + (loaned * 0.1);
                 return { month: name, paid, loaned, ex, profit };
+            });
+            summary = summary.filter(s => s.month.toLowerCase().includes(searchTerm.toLowerCase()));
+            const handleSort = (column) => {
+                const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
+                setSortColumn(column);
+                setSortDirection(direction);
+            };
+            summary.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (sortColumn === 'month') {
+                    valA = MONTH_NAMES.indexOf(a.month);
+                    valB = MONTH_NAMES.indexOf(b.month);
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
             });
             return (
                 <ErrorBoundary>
@@ -1480,10 +1661,17 @@
                             </select>
                         </div>
                         <h2>Monthly Summary for {year}</h2>
+                        <input type="text" className="form-control mb-3" placeholder="Search by month" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                         <div className="table-responsive">
                             <table className="table table-striped">
                                 <thead>
-                                    <tr><th>Month</th><th>Contributions (KES)</th><th>Loans (KES)</th><th>Expenditures (KES)</th><th>Profit (KES)</th></tr>
+                                    <tr>
+                                        <th className={`sortable ${sortColumn === 'month' ? sortDirection : ''}`} onClick={() => handleSort('month')}>Month</th>
+                                        <th className={`sortable ${sortColumn === 'paid' ? sortDirection : ''}`} onClick={() => handleSort('paid')}>Contributions (KES)</th>
+                                        <th className={`sortable ${sortColumn === 'loaned' ? sortDirection : ''}`} onClick={() => handleSort('loaned')}>Loans (KES)</th>
+                                        <th className={`sortable ${sortColumn === 'ex' ? sortDirection : ''}`} onClick={() => handleSort('ex')}>Expenditures (KES)</th>
+                                        <th className={`sortable ${sortColumn === 'profit' ? sortDirection : ''}`} onClick={() => handleSort('profit')}>Profit (KES)</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {summary.map((s, i) => (
@@ -1570,17 +1758,23 @@
         }
 
         // ManageTransactions
-        function ManageTransactions({ year, onDeleteSuccess }) {
+        function ManageTransactions({ year, onDeleteSuccess, onEditSuccess }) {
             const [transactions, setTransactions] = useState([]);
             const [selected, setSelected] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [sortColumn, setSortColumn] = useState('date');
+            const [sortDirection, setSortDirection] = useState('desc');
+            const [editingTransaction, setEditingTransaction] = useState(null);
+            const [users, setUsers] = useState([]);
             useEffect(() => {
                 setLoading(true);
                 Promise.all([
-                    loadData('payments', []).then(p => p.filter(pp => getYear(pp.date) === year).map(pp => ({ ...pp, type: 'Payment', coll: 'payments' }))),
-                    loadData('loans', []).then(l => l.filter(ll => getYear(ll.date) === year).map(ll => ({ ...ll, type: 'Loan', coll: 'loans' }))),
-                    loadData('expenditures', []).then(e => e.filter(ee => getYear(ee.date) === year).map(ee => ({ ...ee, type: 'Expenditure', coll: 'expenditures' })))
+                    loadData('payments', []).then(p => p.filter(pp => getYear(pp.date) === year).map(pp => ({ ...pp, type: 'Payment', coll: 'payments', amount: pp.paidIn }))),
+                    loadData('loans', []).then(l => l.filter(ll => getYear(ll.date) === year).map(ll => ({ ...ll, type: 'Loan', coll: 'loans', amount: ll.amount }))),
+                    loadData('expenditures', []).then(e => e.filter(ee => getYear(ee.date) === year).map(ee => ({ ...ee, type: 'Expenditure', coll: 'expenditures', amount: ee.amount }))),
+                    loadData('users', []).then(setUsers)
                 ]).then(([p, l, e]) => {
                     setTransactions([...p, ...l, ...e].sort((a, b) => new Date(b.date) - new Date(a.date)));
                     setLoading(false);
@@ -1626,12 +1820,69 @@
                     setLoading(false);
                 }
             };
+            const handleEdit = (trans) => {
+                setEditingTransaction({ ...trans });
+            };
+            const handleSaveEdit = async () => {
+                if (!editingTransaction.member || !editingTransaction.date || isNaN(editingTransaction.amount)) {
+                    setError('Invalid data');
+                    setTimeout(() => setError(''), 3000);
+                    return;
+                }
+                setLoading(true);
+                try {
+                    const updates = { member: editingTransaction.member, date: editingTransaction.date };
+                    if (editingTransaction.coll === 'payments') {
+                        updates.paidIn = editingTransaction.amount;
+                    } else {
+                        updates.amount = editingTransaction.amount;
+                    }
+                    await updateData(editingTransaction.coll, editingTransaction.id, updates);
+                    setTransactions(transactions.map(t => t.id === editingTransaction.id && t.coll === editingTransaction.coll ? { ...t, ...updates, amount: editingTransaction.amount } : t));
+                    setEditingTransaction(null);
+                    onEditSuccess();
+                } catch (e) {
+                    setError('Error updating transaction: ' + e.message);
+                    setTimeout(() => setError(''), 3000);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            const handleSort = (column) => {
+                const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
+                setSortColumn(column);
+                setSortDirection(direction);
+            };
+            let filteredTransactions = transactions.filter(t => 
+                t.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                t.date.includes(searchTerm) ||
+                (t.member || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                t.amount.toString().includes(searchTerm)
+            );
+            filteredTransactions.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+                if (sortColumn === 'date') {
+                    valA = new Date(valA);
+                    valB = new Date(valB);
+                } else if (sortColumn === 'member' || sortColumn === 'type') {
+                    valA = (valA || '').toLowerCase();
+                    valB = (valB || '').toLowerCase();
+                } else if (sortColumn === 'amount') {
+                    valA = parseFloat(valA);
+                    valB = parseFloat(valB);
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
             if (loading) return <div className="loading">Loading...</div>;
             if (error) return <div className="alert alert-danger">{error}</div>;
             return (
                 <ErrorBoundary>
                     <div>
                         <h2>Manage Transactions for {year}</h2>
+                        <input type="text" className="form-control mb-3" placeholder="Search by type, date, member, amount" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                         <div className="mb-3">
                             <button className="btn btn-danger" onClick={handleDeleteSelected} disabled={selected.length === 0 || loading}>
                                 Delete Selected ({selected.length})
@@ -1643,22 +1894,30 @@
                         <div className="table-responsive">
                             <table className="table table-striped">
                                 <thead>
-                                    <tr><th>Type</th><th>Date</th><th>Member</th><th>Amount (KES)</th><th><input type="checkbox" checked={selected.length === transactions.length} onChange={() => {
-                                        if (selected.length === transactions.length) {
-                                            setSelected([]);
-                                        } else {
-                                            setSelected(transactions.map(t => ({ id: t.id, coll: t.coll })));
-                                        }
-                                    }} disabled={loading} /></th></tr>
+                                    <tr>
+                                        <th className={`sortable ${sortColumn === 'type' ? sortDirection : ''}`} onClick={() => handleSort('type')}>Type</th>
+                                        <th className={`sortable ${sortColumn === 'date' ? sortDirection : ''}`} onClick={() => handleSort('date')}>Date</th>
+                                        <th className={`sortable ${sortColumn === 'member' ? sortDirection : ''}`} onClick={() => handleSort('member')}>Member</th>
+                                        <th className={`sortable ${sortColumn === 'amount' ? sortDirection : ''}`} onClick={() => handleSort('amount')}>Amount (KES)</th>
+                                        <th><input type="checkbox" checked={selected.length === filteredTransactions.length} onChange={() => {
+                                            if (selected.length === filteredTransactions.length) {
+                                                setSelected([]);
+                                            } else {
+                                                setSelected(filteredTransactions.map(t => ({ id: t.id, coll: t.coll })));
+                                            }
+                                        }} disabled={loading} /></th>
+                                        <th>Actions</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
-                                    {transactions.map((t, i) => (
+                                    {filteredTransactions.map((t, i) => (
                                         <tr key={i}>
                                             <td>{t.type}</td>
                                             <td>{t.date}</td>
                                             <td>{t.member || '-'}</td>
-                                            <td>{(t.paidIn || t.amount || 0).toFixed(2)}</td>
+                                            <td>{(t.amount || 0).toFixed(2)}</td>
                                             <td><input type="checkbox" checked={selected.some(s => s.id === t.id && s.coll === t.coll)} onChange={() => toggleSelect(t.id, t.coll)} disabled={loading} /></td>
+                                            <td><button className="btn btn-primary btn-sm" onClick={() => handleEdit(t)} disabled={loading}>Edit</button></td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -1666,6 +1925,39 @@
                         </div>
                         <button className="btn btn-secondary mt-3" onClick={() => window.location.reload()} disabled={loading}>Back</button>
                     </div>
+                    {editingTransaction && (
+                        <div className="modal fade show d-block" tabIndex="-1" role="dialog">
+                            <div className="modal-dialog" role="document">
+                                <div className="modal-content">
+                                    <div className="modal-header">
+                                        <h5 className="modal-title">Edit {editingTransaction.type}</h5>
+                                        <button type="button" className="btn-close" onClick={() => setEditingTransaction(null)}></button>
+                                    </div>
+                                    <div className="modal-body">
+                                        <div className="mb-3">
+                                            <label className="form-label">Member</label>
+                                            <select className="form-select" value={editingTransaction.member} onChange={e => setEditingTransaction({ ...editingTransaction, member: e.target.value })}>
+                                                <option value="">Select Member</option>
+                                                {users.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="form-label">Date</label>
+                                            <input type="date" className="form-control" value={editingTransaction.date} onChange={e => setEditingTransaction({ ...editingTransaction, date: e.target.value })} />
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="form-label">Amount (KES)</label>
+                                            <input type="number" step="0.01" className="form-control" value={editingTransaction.amount} onChange={e => setEditingTransaction({ ...editingTransaction, amount: parseFloat(e.target.value) })} />
+                                        </div>
+                                    </div>
+                                    <div className="modal-footer">
+                                        <button type="button" className="btn btn-secondary" onClick={() => setEditingTransaction(null)}>Close</button>
+                                        <button type="button" className="btn btn-primary" onClick={handleSaveEdit}>Save changes</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </ErrorBoundary>
             );
         }
