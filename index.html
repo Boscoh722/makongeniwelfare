@@ -291,6 +291,29 @@
             }
         };
 
+        // Helper function to calculate member fines correctly
+        const calculateMemberFines = (memberName, payments, year) => {
+            const monthlyTotals = {};
+            
+            // Sum payments per month
+            payments.filter(p => p.member === memberName && getYear(p.date) === year)
+                .forEach(p => {
+                    const month = getMonth(p.date);
+                    monthlyTotals[month] = (monthlyTotals[month] || 0) + (parseFloat(p.paidIn) || 0);
+                });
+            
+            // Calculate fines for ALL 12 months
+            let totalFines = 0;
+            for (let month = 1; month <= 12; month++) {
+                const monthTotal = monthlyTotals[month] || 0;
+                if (monthTotal < 300) {
+                    totalFines += 50;
+                }
+            }
+            
+            return totalFines;
+        };
+
         // ErrorBoundary
         class ErrorBoundary extends React.Component {
             constructor(props) {
@@ -1343,9 +1366,40 @@
             }, [year]);
             if (loading) return <div className="loading">Loading...</div>;
             if (error) return <div className="alert alert-danger">{error}</div>;
+            
+            // Get user-specific data
             const userPayments = allPayments.filter(p => p.member === userId);
             const userLoans = allLoans.filter(l => l.member === userId);
             const userExpenditures = allExpenditures.filter(e => e.member === userId);
+            
+            // Calculate monthly totals for payments
+            const monthlyTotals = {};
+            userPayments.forEach(p => {
+                const m = getMonth(p.date);
+                monthlyTotals[m] = (monthlyTotals[m] || 0) + (parseFloat(p.paidIn) || 0);
+            });
+            
+            // Calculate fines for ALL 12 months - FIXED BUG
+            let totalFines = 0;
+            const monthlyFines = {};
+            for (let month = 1; month <= 12; month++) {
+                const monthTotal = monthlyTotals[month] || 0;
+                const fine = monthTotal < 300 ? 50 : 0;
+                totalFines += fine;
+                monthlyFines[month] = fine;
+            }
+            
+            // Calculate other totals
+            const totalPaid = userPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
+            const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const totalLoanInterest = totalLoan * 0.1;
+            const totalExpenditures = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            const memberShare = share[userId] || 0;
+            
+            // Calculate net amount
+            const net = totalPaid - totalFines - totalExpenditures + memberShare - totalLoan - totalLoanInterest;
+            
+            // Prepare monthly data for display
             const monthlyData = {};
             userPayments.forEach(p => {
                 const m = getMonth(p.date);
@@ -1353,28 +1407,33 @@
                 monthlyData[m].paid += (parseFloat(p.paidIn) || 0);
                 monthlyData[m].dates.push(p.date);
             });
+            
             const monthlyLoans = {};
             userLoans.forEach(l => {
                 const m = getMonth(l.date);
                 monthlyLoans[m] = (monthlyLoans[m] || 0) + (parseFloat(l.amount) || 0);
             });
+            
             const monthlyExpenditures = {};
             userExpenditures.forEach(e => {
                 const m = getMonth(e.date);
                 monthlyExpenditures[m] = (monthlyExpenditures[m] || 0) + (parseFloat(e.amount) || 0);
             });
-            const totalPaid = Object.values(monthlyData).reduce((sum, m) => sum + m.paid, 0);
-            const totalFines = Object.values(monthlyData).reduce((sum, m) => sum + (m.paid < 300 ? 50 : 0), 0);
-            const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-            const totalLoanInterest = totalLoan * 0.1;
-            const totalExpenditures = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-            const memberShare = share[userId] || 0;
-            const net = totalPaid - totalFines - totalExpenditures + memberShare - totalLoan - totalLoanInterest;
+            
+            // Prepare months array for table display
             let months = MONTH_NAMES.map((name, i) => {
                 const mIndex = i + 1;
                 const data = monthlyData[mIndex] || { paid: 0, dates: [] };
-                return { month: name, paid: data.paid, fine: data.paid < 300 ? 50 : 0, dates: data.dates.join(', '), loan: monthlyLoans[mIndex] || 0, exp: monthlyExpenditures[mIndex] || 0 };
+                return { 
+                    month: name, 
+                    paid: data.paid, 
+                    fine: monthlyFines[mIndex] || 0, // Use the calculated fines
+                    dates: data.dates.join(', '), 
+                    loan: monthlyLoans[mIndex] || 0, 
+                    exp: monthlyExpenditures[mIndex] || 0 
+                };
             });
+            
             months = months.filter(m => m.month.toLowerCase().includes(searchTerm.toLowerCase()));
             const handleSort = (column) => {
                 const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
@@ -1392,6 +1451,7 @@
                 if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
                 return 0;
             });
+            
             return (
                 <ErrorBoundary>
                     <div>
@@ -1488,30 +1548,30 @@
             if (loading) return <div className="loading">Loading...</div>;
             if (error) return <div className="alert alert-danger">{error}</div>;
 
-            const totalFines = users.reduce((sum, user) => {
+            // Calculate total fines correctly for the group
+            let totalGroupFines = 0;
+            const memberData = users.map(user => {
                 const userPayments = allPayments.filter(p => p.member === user.name);
-                const monthlySums = {};
+                
+                // Calculate monthly totals for this user
+                const monthlyTotals = {};
                 userPayments.forEach(p => {
                     const m = getMonth(p.date);
-                    monthlySums[m] = (monthlySums[m] || 0) + (parseFloat(p.paidIn) || 0);
+                    monthlyTotals[m] = (monthlyTotals[m] || 0) + (parseFloat(p.paidIn) || 0);
                 });
-                return sum + Object.values(monthlySums).reduce((s, val) => s + (val < 300 ? 50 : 0), 0);
-            }, 0);
-
-            const totalExpenditures = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-            const totalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-            const totalLoanInterest = totalLoans * 0.1;
-            const totalProfit = totalFines + totalLoanInterest;
-
-            let memberData = users.map(user => {
-                const userPayments = allPayments.filter(p => p.member === user.name);
+                
+                // Calculate fines for ALL 12 months - FIXED BUG
+                let fines = 0;
+                for (let month = 1; month <= 12; month++) {
+                    const monthTotal = monthlyTotals[month] || 0;
+                    if (monthTotal < 300) {
+                        fines += 50;
+                    }
+                }
+                
+                totalGroupFines += fines;
+                
                 const totalPaid = userPayments.reduce((sum, p) => sum + (parseFloat(p.paidIn) || 0), 0);
-                const monthlySums = {};
-                userPayments.forEach(p => {
-                    const m = getMonth(p.date);
-                    monthlySums[m] = (monthlySums[m] || 0) + (parseFloat(p.paidIn) || 0);
-                });
-                const fines = Object.values(monthlySums).reduce((sum, val) => sum + (val < 300 ? 50 : 0), 0);
                 const userLoans = allLoans.filter(l => l.member === user.name);
                 const totalLoan = userLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
                 const totalLoanInterest = totalLoan * 0.1;
@@ -1519,10 +1579,25 @@
                 const totalExp = userExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
                 const memberShare = share[user.name] || 0;
                 const net = totalPaid - fines - totalExp + memberShare - totalLoan - totalLoanInterest;
-                return { name: user.name, totalPaid, fines, totalExp, totalLoan, totalLoanInterest, memberShare, net };
+                
+                return { 
+                    name: user.name, 
+                    totalPaid, 
+                    fines, 
+                    totalExp, 
+                    totalLoan, 
+                    totalLoanInterest, 
+                    memberShare, 
+                    net 
+                };
             });
 
-            memberData = memberData.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            const totalExpenditures = allExpenditures.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            const totalLoans = allLoans.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+            const totalLoanInterest = totalLoans * 0.1;
+            const totalProfit = totalGroupFines + totalLoanInterest;
+
+            let filteredMemberData = memberData.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
             const handleSort = (column) => {
                 const direction = sortColumn === column && sortDirection === 'asc' ? 'desc' : 'asc';
@@ -1530,7 +1605,7 @@
                 setSortDirection(direction);
             };
 
-            memberData.sort((a, b) => {
+            filteredMemberData.sort((a, b) => {
                 let valA = a[sortColumn];
                 let valB = b[sortColumn];
                 if (sortColumn === 'name') {
@@ -1573,7 +1648,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {memberData.map((m, i) => (
+                                            {filteredMemberData.map((m, i) => (
                                                 <tr key={i}>
                                                     <td>{m.name}</td>
                                                     <td>{m.totalPaid.toFixed(2)}</td>
@@ -1593,7 +1668,7 @@
                                 <div className="card">
                                     <div className="card-body">
                                         <h5 className="card-title">Group Summary</h5>
-                                        <p><strong>Total Fines:</strong> {totalFines.toFixed(2)} KES</p>
+                                        <p><strong>Total Fines:</strong> {totalGroupFines.toFixed(2)} KES</p>
                                         <p><strong>Total Expenditures:</strong> {totalExpenditures.toFixed(2)} KES</p>
                                         <p><strong>Total Loans:</strong> {totalLoans.toFixed(2)} KES</p>
                                         <p><strong>Total Loan Interest:</strong> {totalLoanInterest.toFixed(2)} KES</p>
